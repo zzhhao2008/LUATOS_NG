@@ -3,31 +3,42 @@
 #include "driver/gpio.h"
 #include "esp_err.h"
 
+// CST816T 触摸IC驱动
 
-//CST816T 触摸IC驱动
-
-typedef struct 
+typedef struct
 {
-    gpio_num_t  scl;     //SCL管脚
-    gpio_num_t  sda;     //SDA管脚
-    uint32_t    fre;       //I2C速率
-    uint16_t    x_limit;    //X方向触摸边界
-    uint16_t    y_limit;    //y方向触摸边界
-}ft6336u_cfg_t;
-
+    gpio_num_t scl;   // SCL管脚
+    gpio_num_t sda;   // SDA管脚
+    uint32_t fre;     // I2C速率
+    uint16_t x_limit; // X方向触摸边界
+    uint16_t y_limit; // y方向触摸边界
+} ft6336u_cfg_t;
 
 /** ft6336u初始化
  * @param cfg 配置
  * @return err
-*/
-esp_err_t   ft6336u_init(ft6336u_cfg_t* cfg);
+ */
+esp_err_t ft6336u_init(ft6336u_cfg_t *cfg);
 
 /** 读取坐标值
  * @param  x x坐标
  * @param  y y坐标
  * @param state 松手状态 0,松手 1按下
  * @return 无
-*/
-void ft6336u_read(int16_t *x,int16_t *y,int *state);
+ */
+void ft6336u_read(int16_t *x, int16_t *y, int *state);
 
+// 在文件末尾添加
+extern i2c_master_dev_handle_t ft6336u_i2c_device;
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+    lv_indev_t *ft6336u_lvgl_init(ft6336u_cfg_t *cfg);
+
+#ifdef __cplusplus
+}
+#endif
 #endif
