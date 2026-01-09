@@ -1,4 +1,6 @@
-<p align="center"><a href="#" target="_blank" rel="noopener noreferrer"><img width="100" src="logo.jpg" alt="LuatOS logo"></a></p>
+<p align="center"><a href="#" target="_blank" rel="noopener noreferrer">
+<img width="100" src="/LuatOS/logo.jpg" alt="LuatOS logo"></a>
+</p>
 
 本项目源于合宙LuatOS，专用于ESP32C3/S3系列芯片
 
@@ -8,6 +10,7 @@ LuatOS-SoC是一款实时操作系统,用户编写Lua代码就可完成各种功
 1. 修改系统分区表 844 555 布局
 2. 添加FT6636U的驱动以及LVGL——PORTING
 
+### FEATURES
 1. 基于Lua 5.3.x脚本编程,无需编译,把Lua文本文件下载到设备即可完成开发
 2. 低内存需求, 最低32kb ram, 96kb flash空间
 3. 硬件抽象层兼容M3/armv7/risc-v/win32/posix等等,具有强大的扩展性
