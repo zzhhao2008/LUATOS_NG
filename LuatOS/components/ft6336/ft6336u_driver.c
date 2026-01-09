@@ -1,123 +1,237 @@
 #include "ft6336u_driver.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
-
-#define TOUCH_I2C_PORT      -1
-
-#define FT6336U_ADDR    0x38
+#include "freertos/task.h"
 
 static const char *TAG = "ft6336u";
-
-//边界值
 static uint16_t s_usLimitX = 0;
 static uint16_t s_usLimitY = 0;
+static bool s_swapxy = false;
+static bool s_mirror_x = false;
+static bool s_mirror_y = false;
 
-static i2c_master_bus_handle_t ft6336u_i2c_master = NULL;
-static i2c_master_dev_handle_t ft6336u_i2c_device  =NULL;
-
-/** CST816T初始化
- * @param cfg 配置
- * @return err
-*/
-esp_err_t   ft6336u_init(ft6336u_cfg_t* cfg)
-{
-    i2c_master_bus_config_t bus_config = 
-    {
-        .i2c_port = TOUCH_I2C_PORT,
-        .sda_io_num = cfg->sda,
-        .scl_io_num = cfg->scl,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        .trans_queue_depth = 0,
-    };
+// 避免与ESP-IDF标准函数冲突，重命名函数
+static esp_err_t ft6336u_i2c_master_write_read(uint8_t reg_addr, uint8_t *data_rd, size_t size_rd, TickType_t timeout) {
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     
-    i2c_new_master_bus(&bus_config,&ft6336u_i2c_master);
+    // 写入寄存器地址
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (FT6336U_ADDR << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(cmd, reg_addr, true);
     
-    i2c_device_config_t dev_config = 
-    {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = FT6336U_ADDR,
-        .scl_speed_hz = cfg->fre,
-    };
-    i2c_master_bus_add_device(ft6336u_i2c_master, &dev_config, &ft6336u_i2c_device);
+    if (size_rd > 0) {
+        // 读取数据
+        i2c_master_start(cmd);
+        i2c_master_write_byte(cmd, (FT6336U_ADDR << 1) | I2C_MASTER_READ, true);
+        
+        if (size_rd > 1) {
+            i2c_master_read(cmd, data_rd, size_rd - 1, I2C_MASTER_ACK);
+        }
+        i2c_master_read_byte(cmd, &data_rd[size_rd - 1], I2C_MASTER_NACK);
+    }
     
-    s_usLimitX = cfg->x_limit;
-    s_usLimitY = cfg->y_limit;
-
-    
-    uint8_t read_data_buf[1];
-    uint8_t write_data_buf[1];
-    write_data_buf[0] = 0xA3;
-    esp_err_t ret;
-    bool touch_detected = false;
-    ret = i2c_master_transmit_receive(ft6336u_i2c_device, &write_data_buf[0], 1, read_data_buf, 1, 200);
-    if(ret == ESP_OK) touch_detected = true;
-    ESP_LOGI(TAG, "\tChip ID: 0x%02x", read_data_buf[0]);
-
-    write_data_buf[0] = 0xA6;
-    ret = i2c_master_transmit_receive(ft6336u_i2c_device, &write_data_buf[0], 1, read_data_buf, 1, 200);
-    if(ret == ESP_OK) touch_detected = true;
-    ESP_LOGI(TAG, "\tFirmware version: 0x%02x", read_data_buf[0]);
-
-    write_data_buf[0] = 0xA8;
-    ret = i2c_master_transmit_receive(ft6336u_i2c_device, &write_data_buf[0], 1, read_data_buf, 1, 200);
-    if(ret == ESP_OK) touch_detected = true;
-    ESP_LOGI(TAG, "\tCTPM Vendor ID: 0x%02x", read_data_buf[0]);
-
-    return touch_detected?ESP_OK:ESP_FAIL;
+    i2c_master_stop(cmd);
+    esp_err_t ret = i2c_master_cmd_begin(FT6336U_I2C_NUM, cmd, timeout);
+    i2c_cmd_link_delete(cmd);
+    return ret;
 }
 
-/** 读取坐标值
- * @param  x x坐标
- * @param  y y坐标
- * @param state 松手状态 0,松手 1按下
- * @return 无
-*/
-void ft6336u_read(int16_t *x,int16_t *y,int *state)
-{
-    uint8_t data_x[2];        // 2 bytesX
-    uint8_t data_y[2];        // 2 bytesY
-    
-    static int16_t last_x = 0;  // 12bit pixel value
-    static int16_t last_y = 0;  // 12bit pixel value
-    uint8_t write_buf[1];
-    uint8_t touch_pnt_cnt[1];        // Number of detected touch points
+// 删除未使用的i2c_master_write函数，避免命名冲突
+// static esp_err_t i2c_master_write(uint8_t reg_addr, uint8_t *data_wr, size_t size_wr, TickType_t timeout) {
+//     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+//     
+//     i2c_master_start(cmd);
+//     i2c_master_write_byte(cmd, (FT6336U_ADDR << 1) | I2C_MASTER_WRITE, true);
+//     i2c_master_write_byte(cmd, reg_addr, true);
+//     i2c_master_write(cmd, data_wr, size_wr, true);
+//     i2c_master_stop(cmd);
+//     
+//     esp_err_t ret = i2c_master_cmd_begin(FT6336U_I2C_NUM, cmd, timeout);
+//     i2c_cmd_link_delete(cmd);
+//     return ret;
+// }
 
-    write_buf[0] = 0x02;
-    i2c_master_transmit_receive(ft6336u_i2c_device, &write_buf[0], 1, &touch_pnt_cnt[0], 1, 500);    
-    if ((touch_pnt_cnt[0]&0x0f) != 1) {    // ignore no touch & multi touch
+esp_err_t ft6336u_init(ft6336u_cfg_t* cfg) {
+    // 保存配置
+    s_usLimitX = cfg->x_limit;
+    s_usLimitY = cfg->y_limit;
+    s_swapxy = cfg->swapxy;
+    s_mirror_x = cfg->mirror_x;
+    s_mirror_y = cfg->mirror_y;
+
+    // 配置RST引脚(如果提供)
+    if (cfg->rst != -1) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << cfg->rst),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        gpio_config(&io_conf);
+        gpio_set_level(cfg->rst, 0);  // 复位
+        vTaskDelay(pdMS_TO_TICKS(10));
+        gpio_set_level(cfg->rst, 1);  // 释放复位
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    // 配置INT引脚(如果提供)
+    if (cfg->int_pin != -1) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << cfg->int_pin),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        gpio_config(&io_conf);
+    }
+
+    // 配置I2C
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = cfg->sda,
+        .scl_io_num = cfg->scl,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = cfg->fre,
+    };
+    
+    esp_err_t ret = i2c_param_config(FT6336U_I2C_NUM, &conf);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "I2C config failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    ret = i2c_driver_install(FT6336U_I2C_NUM, conf.mode, 0, 0, 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "I2C driver install failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // 读取设备信息
+    uint8_t read_buf[1];
+    bool touch_detected = false;
+
+    // 读取芯片ID
+    ret = ft6336u_i2c_master_write_read(0xA3, read_buf, 1, pdMS_TO_TICKS(100));
+    if (ret == ESP_OK) {
+        touch_detected = true;
+        ESP_LOGI(TAG, "Chip ID: 0x%02x", read_buf[0]);
+    } else {
+        ESP_LOGE(TAG, "Failed to read Chip ID: %s", esp_err_to_name(ret));
+    }
+
+    // 读取固件版本
+    ret = ft6336u_i2c_master_write_read(0xA6, read_buf, 1, pdMS_TO_TICKS(100));
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Firmware version: 0x%02x", read_buf[0]);
+    }
+
+    // 读取供应商ID
+    ret = ft6336u_i2c_master_write_read(0xA8, read_buf, 1, pdMS_TO_TICKS(100));
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "CTPM Vendor ID: 0x%02x", read_buf[0]);
+    }
+
+    return touch_detected ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t ft6336u_get_info(uint8_t *chip_id, uint8_t *firmware_version, uint8_t *vendor_id) {
+    esp_err_t ret;
+    uint8_t read_buf[1];
+
+    // 读取芯片ID
+    ret = ft6336u_i2c_master_write_read(0xA3, read_buf, 1, pdMS_TO_TICKS(100));
+    if (ret == ESP_OK) {
+        *chip_id = read_buf[0];
+    } else {
+        *chip_id = 0;
+        ESP_LOGW(TAG, "Failed to read chip ID: %s", esp_err_to_name(ret));
+    }
+
+    // 读取固件版本
+    ret = ft6336u_i2c_master_write_read(0xA6, read_buf, 1, pdMS_TO_TICKS(100));
+    if (ret == ESP_OK) {
+        *firmware_version = read_buf[0];
+    } else {
+        *firmware_version = 0;
+        ESP_LOGW(TAG, "Failed to read firmware version: %s", esp_err_to_name(ret));
+    }
+
+    // 读取供应商ID
+    ret = ft6336u_i2c_master_write_read(0xA8, read_buf, 1, pdMS_TO_TICKS(100));
+    if (ret == ESP_OK) {
+        *vendor_id = read_buf[0];
+    } else {
+        *vendor_id = 0;
+        ESP_LOGW(TAG, "Failed to read vendor ID: %s", esp_err_to_name(ret));
+    }
+
+    return ESP_OK;
+}
+
+void ft6336u_read(int16_t *x, int16_t *y, int *state) {
+    uint8_t touch_pnt_cnt[1];
+    static int16_t last_x = 0, last_y = 0;
+    
+    // 读取触摸点数量
+    esp_err_t ret = ft6336u_i2c_master_write_read(0x02, touch_pnt_cnt, 1, pdMS_TO_TICKS(100));
+    if (ret != ESP_OK || (touch_pnt_cnt[0] & 0x0F) != 1) {    // ignore no touch & multi touch
         *x = last_x;
         *y = last_y;
         *state = 0;
         return;
     }
 
-    //读取X坐标
-    write_buf[0] = 0x03;
-    i2c_master_transmit_receive(ft6336u_i2c_device, &write_buf[0], 1, &data_x[0], 2, 500);
+    uint8_t data_x[2], data_y[2];
+    
+    // 读取X坐标
+    ret = ft6336u_i2c_master_write_read(0x03, data_x, 2, pdMS_TO_TICKS(100));
+    if (ret != ESP_OK) {
+        *x = last_x;
+        *y = last_y;
+        *state = 0;
+        return;
+    }
 
-    //读取Y坐标
-    write_buf[0] = 0x05;
-    i2c_master_transmit_receive(ft6336u_i2c_device, &write_buf[0], 1, &data_y[0], 2, 500);
+    // 读取Y坐标
+    ret = ft6336u_i2c_master_write_read(0x05, data_y, 2, pdMS_TO_TICKS(100));
+    if (ret != ESP_OK) {
+        *x = last_x;
+        *y = last_y;
+        *state = 0;
+        return;
+    }
 
-    int16_t current_x = ((data_x[0] & 0x0F) << 8) | (data_x[1] & 0xFF);
-    int16_t current_y = ((data_y[0] & 0x0F) << 8) | (data_y[1] & 0xFF);
+    int16_t current_x = ((data_x[0] & 0x0F) << 8) | data_x[1];
+    int16_t current_y = ((data_y[0] & 0x0F) << 8) | data_y[1];
 
-    if(last_x != current_x || current_y != last_y)
-    {
+    // 应用坐标转换
+    if (s_mirror_x) {
+        current_x = s_usLimitX - 1 - current_x;
+    }
+    if (s_mirror_y) {
+        current_y = s_usLimitY - 1 - current_y;
+    }
+    if (s_swapxy) {
+        int16_t temp = current_x;
+        current_x = current_y;
+        current_y = temp;
+    }
+
+    // 边界检查
+    if (current_x < 0) current_x = 0;
+    if (current_y < 0) current_y = 0;
+    if (current_x >= s_usLimitX) current_x = s_usLimitX - 1;
+    if (current_y >= s_usLimitY) current_y = s_usLimitY - 1;
+
+    if (last_x != current_x || last_y != current_y) {
         last_x = current_x;
         last_y = current_y;
-        //ESP_LOGI(TAG,"touch x:%d,y:%d",last_x,last_y);
     }
-    
-
-    if(last_x >= s_usLimitX)
-        last_x = s_usLimitX - 1;
-    if(last_y >= s_usLimitY)
-        last_y = s_usLimitY - 1;
 
     *x = last_x;
     *y = last_y;
     *state = 1;
 }
-
