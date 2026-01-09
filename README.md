@@ -22,7 +22,7 @@ LuatOS-SoC是一款实时操作系统,用户编写Lua代码就可完成各种功
 
 ## 文档
 * [LuatOS文档代理（ZSV Studio）](https://zsvstudio.top/luawiki/index.html)
-* [项目文档（TODO）](/docs/readme.md)
+* [项目文档](/docs/readme.md)
 * [IOT](https://iot.zsvstudio.top)
 
 ----------------------------------------------------------------------------------
