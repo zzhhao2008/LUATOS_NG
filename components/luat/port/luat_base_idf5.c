@@ -98,7 +98,7 @@ static const luaL_Reg loadedlibs[] = {
 #endif
   // {"pin", luaopen_pin},                   // pin
 #ifdef LUAT_USE_FT6636
-  {"ft6336", luaopen_ft6336u},             // ft6636电容触摸屏驱动
+  {"ft6336u", luaopen_ft6336u},             // ft6636电容触摸屏驱动
 #endif
 //-----------------------------------------------------------------------
 // 工具库, 按需选用
