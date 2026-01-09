@@ -97,6 +97,9 @@ static const luaL_Reg loadedlibs[] = {
   {"touchkey", luaopen_touchkey},              // OTP
 #endif
   // {"pin", luaopen_pin},                   // pin
+#ifdef LUAT_USE_FT6636
+  {"ft6336", luaopen_ft6336u},             // ft6636电容触摸屏驱动
+#endif
 //-----------------------------------------------------------------------
 // 工具库, 按需选用
 #ifdef LUAT_USE_CRYPTO

@@ -31,6 +31,7 @@ idf_component_register(SRC_DIRS ${LUATOS_ROOT}/luat/modules
                                 ${LUATOS_ROOT}/components/gtfont
                                 ${LUATOS_ROOT}/components/qrcode
                                 ${LUATOS_ROOT}/components/lcd
+                                ${LUATOS_ROOT}/components/ft6336
                                 ${LUATOS_ROOT}/components/lvgl/gen/lv_core
                                 ${LUATOS_ROOT}/components/lvgl/gen/lv_draw
                                 ${LUATOS_ROOT}/components/lvgl/gen/lv_font
@@ -161,7 +162,6 @@ idf_component_register(SRC_DIRS ${LUATOS_ROOT}/luat/modules
                                 ${LUATOS_ROOT}/components/gmssl/include
                                 ${LUATOS_ROOT}/components/repl
                                 ${LUATOS_ROOT}/components/ymodem
-                                ${LUATOS_ROOT}/components/ft6636
                                 ${LUATOS_ROOT}/components/xxtea/include
                     REQUIRES esp-tls lwip esp_http_client mbedtls spiffs driver heap esp_netif esp_event
                              esp_wifi esp_rom http_parser mqtt esp_adc bt console spi_flash esp_psram nvs_flash

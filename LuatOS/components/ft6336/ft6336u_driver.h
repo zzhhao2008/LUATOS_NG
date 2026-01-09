@@ -2,7 +2,8 @@
 #define _FT6336U_DRIVER_H_
 #include "driver/gpio.h"
 #include "esp_err.h"
-
+#include "driver/i2c.h"
+#include "esp_log.h"
 // CST816T 触摸IC驱动
 
 typedef struct
@@ -28,7 +29,6 @@ esp_err_t ft6336u_init(ft6336u_cfg_t *cfg);
  */
 void ft6336u_read(int16_t *x, int16_t *y, int *state);
 
-// 在文件末尾添加
 extern i2c_master_dev_handle_t ft6336u_i2c_device;
 
 #ifdef __cplusplus

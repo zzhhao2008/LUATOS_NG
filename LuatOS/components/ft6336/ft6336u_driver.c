@@ -1,7 +1,5 @@
 #include "ft6336u_driver.h"
 #include "driver/i2c.h"
-#include "driver/i2c_master.h"
-#include "driver/i2s_std.h"
 #include "esp_log.h"
 
 #define TOUCH_I2C_PORT      -1
