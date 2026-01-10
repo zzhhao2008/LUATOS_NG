@@ -1,18 +1,17 @@
-
 #include "luat_base.h"
 #include "luat_pwm.h"
-
 #include <math.h>
-
 #include "driver/ledc.h"
-
+#include "esp_timer.h"
 #include "luat_log.h"
 #define LUAT_LOG_TAG "pwm"
 
 typedef struct pwm_cont {
     luat_pwm_conf_t pc;
     uint8_t is_opened;
-}pwm_conf_t;
+    int duty_resolution;  // 存储当前的duty分辨率
+    bool is_fading;       // 标记是否正在进行fade
+} pwm_conf_t;
 
 static pwm_conf_t luat_pwm_idf[LEDC_TIMER_MAX];
 
@@ -61,14 +60,22 @@ static uint32_t ledc_find_suitable_duty_resolution2(uint32_t src_clk_freq, uint3
     return duty_resolution;
 }
 
+// 停止当前的fade过程
+static void stop_current_fade(int timer_index) {
+    if (timer_index >= 0 && timer_index < LEDC_TIMER_MAX && luat_pwm_idf[timer_index].is_fading) {
+        ledc_fade_func_uninstall();
+        luat_pwm_idf[timer_index].is_fading = false;
+    }
+}
+
 int luat_pwm_setup(luat_pwm_conf_t *conf){
     int duty_resolution = 0;
     int timer = -1;
     int ret = -1;
     if (conf->channel < 0)
         return -1;
-    for (size_t i = 0; i < LEDC_TIMER_MAX; i++)
-    {
+    
+    for (size_t i = 0; i < LEDC_TIMER_MAX; i++) {
         if (luat_pwm_idf[i].is_opened && luat_pwm_idf[i].pc.channel == conf->channel) {
             timer = i;
             break;
@@ -78,28 +85,30 @@ int luat_pwm_setup(luat_pwm_conf_t *conf){
             break;
         }
     }
+    
     if (timer < 0) {
         LLOGE("too many PWM!!! only %d channels supported", LEDC_TIMER_MAX);
         return -1;
     }
+    
     if (conf->pulse > conf->precision) {
         conf->pulse = conf->precision;
     }
-
-
-    duty_resolution = ledc_find_suitable_duty_resolution2(80*1000*1000, conf->period);
     
+    // 停止当前可能的fade过程
+    stop_current_fade(timer);
+    
+    duty_resolution = ledc_find_suitable_duty_resolution2(80*1000*1000, conf->period);
     int duty = (conf->pulse * (1 << duty_resolution)) / conf->precision;
-    // LLOGD("freq=%d, pulse=%d, precision=%d, resolution=%08X, duty=%08X", (int)conf->period, (int)conf->pulse, (int)conf->precision, (int)(1 << duty_resolution), (int)duty);
-
+    
     int speed_mode = LEDC_LOW_SPEED_MODE;
     
     // 判断一下是否需要完全重新配置
-    if (conf->period != luat_pwm_idf[timer].pc.period || // 频率是否相同
-         conf->precision != luat_pwm_idf[timer].pc.precision || // 占空比精度是否相同
-         conf->pnum != luat_pwm_idf[timer].pc.pnum // 输出脉冲数是否相同
-        ) {
-        // LLOGD("need to reconfig channel %d period %d", conf->channel, conf->period);
+    if (timer < 0 || 
+        conf->period != luat_pwm_idf[timer].pc.period || // 频率是否相同
+        conf->precision != luat_pwm_idf[timer].pc.precision || // 占空比精度是否相同
+        conf->pnum != luat_pwm_idf[timer].pc.pnum // 输出脉冲数是否相同
+    ) {
         ledc_timer_config_t ledc_timer = {
             .speed_mode = speed_mode,
             .timer_num = timer,
@@ -107,12 +116,13 @@ int luat_pwm_setup(luat_pwm_conf_t *conf){
             .clk_cfg = LEDC_AUTO_CLK,
             .duty_resolution = duty_resolution
         };
-        // LLOGD("duty_resolution %d %04X", duty_resolution, 1 << duty_resolution);
+        
         ret = ledc_timer_config(&ledc_timer);
         if (ret) {
+            LLOGE("ledc_timer_config failed: %d", ret);
             return -1;
         }
-
+        
         ledc_channel_config_t ledc_channel = {
             .speed_mode = speed_mode,
             .channel = timer,
@@ -122,35 +132,134 @@ int luat_pwm_setup(luat_pwm_conf_t *conf){
             .duty = duty,
             .hpoint = 0,
         };
-        ledc_channel_config(&ledc_channel);
+        
+        ret = ledc_channel_config(&ledc_channel);
+        if (ret) {
+            LLOGE("ledc_channel_config failed: %d", ret);
+            return -1;
+        }
     }
+    
     ledc_set_duty(speed_mode, timer, duty);
     ledc_update_duty(speed_mode, timer);
-    memcpy( &luat_pwm_idf[timer].pc, conf, sizeof(luat_pwm_conf_t));
+    
+    memcpy(&luat_pwm_idf[timer].pc, conf, sizeof(luat_pwm_conf_t));
     luat_pwm_idf[timer].is_opened = 1;
+    luat_pwm_idf[timer].duty_resolution = duty_resolution;
+    luat_pwm_idf[timer].is_fading = false;
+    
+    // 如果配置了fade，启动fade过程
+    if (conf->fade_time > 0 && conf->target_pulse >= 0) {
+        return luat_pwm_fade(conf->channel, conf->target_pulse, conf->fade_time);
+    }
+    
     return 0;
+}
+
+int luat_pwm_fade(int channel, int target_duty, int time_ms) {
+    if (channel < 0 || time_ms <= 0 || target_duty < 0) {
+        LLOGE("Invalid fade parameters: channel=%d, target_duty=%d, time_ms=%d", 
+              channel, target_duty, time_ms);
+        return -1;
+    }
+    
+    // 查找通道
+    int timer = -1;
+    for (size_t i = 0; i < LEDC_TIMER_MAX; i++) {
+        if (luat_pwm_idf[i].is_opened && luat_pwm_idf[i].pc.channel == channel) {
+            timer = i;
+            break;
+        }
+    }
+    
+    if (timer < 0) {
+        LLOGE("PWM channel %d not found or not opened", channel);
+        return -1;
+    }
+    
+    // 限制目标占空比
+    if (target_duty > luat_pwm_idf[timer].pc.precision) {
+        target_duty = luat_pwm_idf[timer].pc.precision;
+    }
+    
+    // 停止当前的fade过程
+    stop_current_fade(timer);
+    
+    // 安装fade功能
+    esp_err_t ret = ledc_fade_func_install(LEDC_LOW_SPEED_MODE);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) { // ESP_ERR_INVALID_STATE表示已经安装
+        LLOGE("ledc_fade_func_install failed: %d", ret);
+        return -1;
+    }
+    
+    // 计算目标duty值
+    int target_duty_value = (target_duty * (1 << luat_pwm_idf[timer].duty_resolution)) / luat_pwm_idf[timer].pc.precision;
+    
+    // 设置fade
+    ret = ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, timer, target_duty_value, time_ms);
+    if (ret != ESP_OK) {
+        LLOGE("ledc_set_fade_with_time failed: %d", ret);
+        return -1;
+    }
+    
+    // 启动fade
+    ret = ledc_fade_start(LEDC_LOW_SPEED_MODE, timer, LEDC_FADE_NO_WAIT);
+    if (ret != ESP_OK) {
+        LLOGE("ledc_fade_start failed: %d", ret);
+        return -1;
+    }
+    
+    // 更新状态
+    luat_pwm_idf[timer].is_fading = true;
+    luat_pwm_idf[timer].pc.target_pulse = target_duty;
+    
+    return 0;
+}
+
+int luat_pwm_stop_fade(int channel) {
+    if (channel < 0) {
+        return -1;
+    }
+    
+    // 查找通道
+    for (size_t i = 0; i < LEDC_TIMER_MAX; i++) {
+        if (luat_pwm_idf[i].is_opened && luat_pwm_idf[i].pc.channel == channel) {
+            stop_current_fade(i);
+            return 0;
+        }
+    }
+    
+    return -1;
 }
 
 int luat_pwm_close(int channel){
     int timer = -1;
     if (channel < 0)
         return -1;
+    
     for (size_t i = 0; i < LEDC_TIMER_MAX; i++){
         if (luat_pwm_idf[i].is_opened && luat_pwm_idf[i].pc.channel == channel){
             timer = i;
             break;
         }
     }
+    
     if (timer < 0) {
         return -1;
     }
+    
+    // 停止fade
+    stop_current_fade(timer);
+    
     int ret = ledc_stop(LEDC_LOW_SPEED_MODE, timer, 0);
     if (ret) {
         return -1;
     }
+    
     gpio_reset_pin(channel);
     luat_pwm_idf[timer].is_opened = 0;
-    memset(&luat_pwm_idf[timer].pc, 0, sizeof(luat_pwm_conf_t) );
+    memset(&luat_pwm_idf[timer].pc, 0, sizeof(luat_pwm_conf_t));
+    
     return 0;
 }
 
