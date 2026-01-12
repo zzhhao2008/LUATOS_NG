@@ -6,6 +6,8 @@
 #include "luat_spi.h"
 #include "u8g2.h"
 
+#define LUAT_LCD_CONF_COUNT (1)
+
 #define LCD_W 240
 #define LCD_H 320
 #define LCD_DIRECTION 0
@@ -24,11 +26,26 @@
 #elif (LUAT_LCD_COLOR_DEPTH == 8)
 #define luat_color_t uint8_t
 #else
-#error "no supprt color depth"
+#error "no support color depth"
 #endif
 
-#define LUAT_LCD_SPI_DEVICE 255
-#define LUAT_LCD_HW_ID_0 0x20	//专用LCD接口的SPI ID
+enum{
+    LUAT_LCD_ROTATE_0 = 0,
+    LUAT_LCD_ROTATE_90,
+    LUAT_LCD_ROTATE_180,
+    LUAT_LCD_ROTATE_270,
+};
+
+enum{
+	LUAT_LCD_HW_ID_0    = 0x20,	//专用LCD接口 ID
+
+    LUAT_LCD_SPI_DEVICE,
+    LUAT_LCD_PORT_RGB,
+    LUAT_LCD_PORT_8080,
+    LUAT_LCD_PORT_ARM2D,
+    LUAT_LCD_PORT_DMA2D,
+    LUAT_LCD_PORT_MAX,
+};
 
 struct luat_lcd_opts;
 
@@ -41,38 +58,82 @@ enum{
 	LUAT_LCD_IM_3_WIRE_9_BIT_INTERFACE_II = 13,
 	LUAT_LCD_IM_4_WIRE_8_BIT_INTERFACE_II = 14,
 	LUAT_LCD_IM_2_DATA_LANE = 16,
+	LUAT_LCD_IM_QSPI_MODE = 0x20,
+	LUAT_LCD_IM_8080_MODE = 0x30,
+	LUAT_LCD_IM_MIPI_MODE = 0x40,
 };
+
+enum{
+	LUAT_LCD_ACC_HW_JPEG = 0x01,
+    LUAT_LCD_ACC_HW_ALL = 0xFF,
+};
+
+typedef struct
+{
+	uint8_t write_4line_cmd;  //address 1线 data4线
+	uint8_t vsync_reg;
+	uint8_t hsync_cmd;
+	uint8_t hsync_reg;
+	uint8_t write_1line_cmd;	//cmd 1线 param 1线
+	uint8_t write_4line_data;	//address data都是4线
+}luat_lcd_qspi_conf_t;
 
 typedef struct luat_lcd_conf {
     uint8_t port;
     uint8_t pin_dc;
     uint8_t pin_pwr;
     uint8_t pin_rst;
-
-    int16_t w;
-    int16_t h;
-    uint32_t buffer_size;
-    uint32_t dc_delay_us;
+    uint8_t lcd_cs_pin;		//注意不用的时候写0xff
+    uint8_t is_init_done;
+    uint8_t interface_mode;	// LUAT_LCD_IM_XXX
+    uint8_t bpp;			//颜色bit，默认是RGB565 16bit，预留兼容ARGB888 32bit
     uint8_t xoffset;//偏移
     uint8_t yoffset;//偏移
     uint8_t auto_flush;
     uint8_t direction;//方向
-    u8g2_t luat_lcd_u8g2 ;
-    struct luat_lcd_opts* opts;
-    luat_spi_device_t* lcd_spi_device;
-    int lcd_spi_ref;
-    void* userdata;
-
-    // buff 相关
-    luat_color_t* buff;
-    int buff_ref;
+    uint8_t endianness_swap;	// 大小端转换
+    uint8_t lcd_use_lvgl;
+    union {
+        struct {
+            uint8_t acc_hw_jpeg:1;
+            uint8_t :7;
+        };
+        uint8_t acc_hw;
+    };
+    uint8_t reserved;
+    int16_t w;
+    int16_t h;
+    uint16_t hbp;
+    uint16_t hspw;
+    uint16_t hfp;
+    uint16_t vbp;
+    uint16_t vspw;
+    uint16_t vfp;
     int16_t flush_y_min;
     int16_t flush_y_max;
-    uint8_t is_init_done;
-
-    uint8_t interface_mode;	// LUAT_LCD_IM_XXX
-    uint8_t lcd_cs_pin;		//注意不用的时候写0xff
+    uint32_t buffer_size;
+    uint32_t dc_delay_us;
+    uint32_t flush_rate;	//刷新率，针对no ram的屏幕起效
+    uint32_t bus_speed;
+    luat_color_t* buff;
+    luat_color_t* buff_ex;
+    luat_color_t* buff_draw;
+    struct luat_lcd_opts* opts;
+    luat_spi_device_t* lcd_spi_device;
+    int buff_ref;
+    int lcd_spi_ref;
+    void* userdata;
+    u8g2_t luat_lcd_u8g2 ;
 } luat_lcd_conf_t;
+
+typedef struct luat_lcd_buff_info {
+	luat_color_t * buff;
+    size_t len;
+    uint32_t width;
+    uint32_t height;
+	// size_t offset;
+	void* userdata;
+}luat_lcd_buff_info_t;
 
 typedef struct luat_lcd_opts {
     const char* name;
@@ -82,12 +143,18 @@ typedef struct luat_lcd_opts {
     uint8_t direction90;
     uint8_t direction180;
     uint8_t direction270;
+    uint8_t rb_swap;
+    uint8_t no_ram_mode;
     uint16_t init_cmds_len;
     uint16_t* init_cmds;
+    int (*user_ctrl_init)(luat_lcd_conf_t* conf);
     int (*init)(luat_lcd_conf_t* conf);
     int (*write_cmd_data)(luat_lcd_conf_t* conf,const uint8_t cmd, const uint8_t *data, uint8_t data_len);
     int (*read_cmd_data)(luat_lcd_conf_t* conf,const uint8_t cmd, const uint8_t *data, uint8_t data_len, uint8_t dummy_bit);
     int (*lcd_draw)(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, luat_color_t* color);
+    int (*lcd_fill)(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, luat_color_t color);
+    int (*sleep_ctrl)(luat_lcd_conf_t* conf, uint8_t on_off);
+    int (*reset_ctrl)(luat_lcd_conf_t* conf, uint8_t on_off);
 } luat_lcd_opts_t;
 
 extern luat_lcd_opts_t lcd_opts_gc9106l;
@@ -101,6 +168,10 @@ extern luat_lcd_opts_t lcd_opts_st7735v;
 extern luat_lcd_opts_t lcd_opts_st7789;
 extern luat_lcd_opts_t lcd_opts_st7796;
 extern luat_lcd_opts_t lcd_opts_nv3037;
+extern luat_lcd_opts_t lcd_opts_h050iwv;
+extern luat_lcd_opts_t lcd_opts_jd9261t_inited;
+//extern luat_lcd_opts_t lcd_opts_jd9261t;
+extern luat_lcd_opts_t lcd_opts_sh8601z;
 
 static inline luat_color_t color_swap(luat_color_t color) {
     luat_color_t tmp = (color >> 8) + ((color & 0xFF) << 8);
@@ -115,9 +186,25 @@ void luat_lcd_execute_cmds(luat_lcd_conf_t* conf);
 int lcd_write_cmd_data(luat_lcd_conf_t* conf,const uint8_t cmd, const uint8_t *data, uint8_t data_len);
 int lcd_read_cmd_data(luat_lcd_conf_t* conf,const uint8_t cmd, const uint8_t *data, uint8_t data_len, uint8_t dummy_bit);
 
+// xxx_default 为luatos内部默认实现,bsp可不使用default实现
+int luat_lcd_init_default(luat_lcd_conf_t* conf);
+int luat_lcd_setup_buff_default(luat_lcd_conf_t* conf);
+int luat_lcd_flush_default(luat_lcd_conf_t* conf);
+int luat_lcd_draw_default(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, luat_color_t* color);
+int lcd_draw_jpeg_default(luat_lcd_conf_t* conf, const char* path, int16_t x, int16_t y);
+int lcd_jpeg_decode_default(luat_lcd_conf_t* conf, const char* path, luat_lcd_buff_info_t* buff_info);
+
+// 以下为luatos内部实现通用接口
+// 以下为 weak函数 可bsp单独适配硬件加速或其他接口适配等功能,默认指向上方xxx_default函数
+int luat_lcd_init(luat_lcd_conf_t* conf);
+int luat_lcd_setup_buff(luat_lcd_conf_t* conf);
+int luat_lcd_flush(luat_lcd_conf_t* conf);
+int luat_lcd_draw(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, luat_color_t* color);
+int lcd_draw_jpeg(luat_lcd_conf_t* conf, const char* path, int16_t x, int16_t y);
+int lcd_jpeg_decode(luat_lcd_conf_t* conf, const char* path, luat_lcd_buff_info_t* buff_info);
+// 以下为非 weak 函数
 luat_lcd_conf_t* luat_lcd_get_default(void);
 const char* luat_lcd_name(luat_lcd_conf_t* conf);
-int luat_lcd_init(luat_lcd_conf_t* conf);
 int luat_lcd_close(luat_lcd_conf_t* conf);
 int luat_lcd_display_on(luat_lcd_conf_t* conf);
 int luat_lcd_display_off(luat_lcd_conf_t* conf);
@@ -127,8 +214,6 @@ int luat_lcd_inv_off(luat_lcd_conf_t* conf);
 int luat_lcd_inv_on(luat_lcd_conf_t* conf);
 int luat_lcd_set_address(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2);
 int luat_lcd_set_color(luat_color_t back, luat_color_t fore);
-int luat_lcd_draw(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, luat_color_t* color);
-int luat_lcd_flush(luat_lcd_conf_t* conf);
 int luat_lcd_draw_no_block(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, luat_color_t* color, uint8_t last_flush);
 int luat_lcd_clear(luat_lcd_conf_t* conf, luat_color_t color);
 int luat_lcd_draw_fill(luat_lcd_conf_t* conf, int16_t x1,int16_t y1,int16_t x2,int16_t y2,luat_color_t color);
@@ -139,11 +224,11 @@ int luat_lcd_draw_hline(luat_lcd_conf_t* conf, int16_t x, int16_t y,int16_t h, l
 int luat_lcd_draw_rectangle(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, luat_color_t color);
 int luat_lcd_draw_circle(luat_lcd_conf_t* conf, int16_t x0, int16_t y0, uint8_t r, luat_color_t color);
 int luat_lcd_set_direction(luat_lcd_conf_t* conf, uint8_t direction);
+int luat_lcd_set_reset_pin_level(luat_lcd_conf_t* conf, uint8_t level);
 /*
  * csdk适配用
  */
 void luat_lcd_service_init(uint32_t pro);
-void luat_lcd_service_run(void *api, void *data, uint32_t param, uint32_t timeout);
 int luat_lcd_service_draw(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, luat_color_t *data, uint8_t is_static_buf);
 int luat_lcd_service_set_mem_type(uint8_t type);
 uint32_t luat_lcd_service_cache_len(void);
@@ -151,6 +236,9 @@ void luat_lcd_IF_init(luat_lcd_conf_t* conf);
 int luat_lcd_IF_write_cmd_data(luat_lcd_conf_t* conf,const uint8_t cmd, const uint8_t *data, uint8_t data_len);
 int luat_lcd_IF_read_cmd_data(luat_lcd_conf_t* conf,const uint8_t cmd, uint8_t *data, uint8_t data_len, uint8_t dummy_bit);
 int luat_lcd_IF_draw(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, luat_color_t* color);
+int luat_lcd_IF_fill(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, luat_color_t color);
+int luat_lcd_IF_show_camera(luat_lcd_conf_t* conf, int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint32_t data_address);
+int luat_lcd_IF_sleep(luat_lcd_conf_t* conf, uint8_t on_off);
 /**
  * @brief luat_lcd_init放到service里跑，避免luat_lcd_init里漫长的delay带来的影响
  * @param conf lcd配置
@@ -176,12 +264,36 @@ typedef struct
  * @param start_y 起始位置y
  * @return 0无异常，其他失败
  */
-int luat_lcd_show_camera_in_service(void *camera_info, camera_cut_info_t *cut_info, uint16_t start_x, uint16_t start_y);
+int luat_lcd_start_show_camera(void *camera_info, camera_cut_info_t *cut_info, uint16_t start_x, uint16_t start_y);
+
+/**
+ * @brief 摄像头在后台启动预览
+ * @param camera_info camera配置，里面有lcd配置
+ * @param cut_info 剪裁配置，可以留空
+ * @param start_x 起始位置x
+ * @param start_y 起始位置y
+ * @return 0无异常，其他失败
+ */
+int luat_lcd_start_show_camera_in_service(void *camera_info, camera_cut_info_t *cut_info, uint16_t start_x, uint16_t start_y);
 
 /**
  * @brief 停止摄像头预览
+ * @param camera_info camera配置，里面有lcd配置
  * @return 0无异常，其他失败
  */
-int luat_lcd_stop_show_camera(void);
+int luat_lcd_stop_show_camera(void *camera_info);
+
+int luat_lcd_qspi_config(luat_lcd_conf_t* conf, luat_lcd_qspi_conf_t *qspi_config);
+int luat_lcd_qspi_auto_flush_on_off(luat_lcd_conf_t* conf, uint8_t on_off);
+uint8_t luat_lcd_qspi_is_no_ram(luat_lcd_conf_t* conf);
+typedef void (*luat_lcd_api)(void *param, uint32_t param_len);
+int luat_lcd_run_api_in_service(luat_lcd_api api, void *param, uint32_t param_len);
+
+
+int luat_lcd_conf_add(luat_lcd_conf_t* conf);
+
+void luat_lcd_service_debug(void);
+
+
 #endif
 

@@ -785,6 +785,10 @@ int8_t u8g2_font_2x_decode_glyph(u8g2_t *u8g2, const uint8_t *glyph_data)
   return d*2;
 }
 
+#if (defined __LUATOS__) || defined (__USER_CODE__)
+#include "luat_fs.h"
+#include "luat_mem.h"
+#endif
 /*
   Description:
     Find the starting point of the glyph data.
@@ -795,7 +799,94 @@ int8_t u8g2_font_2x_decode_glyph(u8g2_t *u8g2, const uint8_t *glyph_data)
 */
 const uint8_t *u8g2_font_get_glyph_data(u8g2_t *u8g2, uint16_t encoding)
 {
+    // printf("u8g2_font_get_glyph_data: encoding=%02X\n", encoding);
   const uint8_t *font = u8g2->font;
+    uint8_t font_data[4] = {0};
+    // luat_fs_fread(font_info, 1, 21, u8g2->font_file);
+#if (defined __LUATOS__) || defined (__USER_CODE__)
+    if (u8g2->font_file){
+        luat_fs_fseek(u8g2->font_file, U8G2_FONT_DATA_STRUCT_SIZE, SEEK_SET);
+        if ( encoding <= 255 ){
+            if ( encoding >= 'a' ){
+                luat_fs_fseek(u8g2->font_file, u8g2->font_info.start_pos_lower_a, SEEK_CUR);
+            } else if ( encoding >= 'A' ){
+                luat_fs_fseek(u8g2->font_file, u8g2->font_info.start_pos_upper_A, SEEK_CUR);
+            }
+            for(;;){
+                font_data[1] = 0;
+                luat_fs_fread(font_data, 1, 2, u8g2->font_file);
+                if (font_data[1] == 0) break;
+                if (font_data[0] == encoding ){
+                    if(u8g2->font){
+                        u8g2->font = luat_heap_realloc(u8g2->font, font_data[1] - 2);
+                    }else{
+                        u8g2->font = luat_heap_malloc(font_data[1] - 2);
+                    }
+                    luat_fs_fread(u8g2->font, 1, font_data[1] - 2, u8g2->font_file);
+                    return u8g2->font;
+                }
+                luat_fs_fseek(u8g2->font_file, font_data[1] - 2, SEEK_CUR);
+            }
+        }
+#ifdef U8G2_WITH_UNICODE
+        else{
+            uint16_t e;
+            // const uint8_t *unicode_lookup_table;
+            // font += u8g2->font_info.start_pos_unicode;
+            luat_fs_fseek(u8g2->font_file, u8g2->font_info.start_pos_unicode, SEEK_CUR);
+            // unicode_lookup_table = font; 
+            /* issue 596: search for the glyph start in the unicode lookup table */
+            // do{
+            //     font += u8g2_font_get_word(unicode_lookup_table, 0);
+            //     e = u8g2_font_get_word(unicode_lookup_table, 2);
+            //     unicode_lookup_table+=4;
+            // } while( e < encoding );
+            // uint16_t pos_unicode = 0;
+            // uint16_t unicode_lookup_pos = 0;
+            // do{
+            //     luat_fs_fread(font_data, 1, 4, u8g2->font_file);
+            //     // uint16_t pos = font_data[0]<<8 | font_data[1];
+            //     pos_unicode += font_data[0]<<8 | font_data[1];
+            //     e = font_data[2]<<8 | font_data[3];
+            //     unicode_lookup_pos+=4;
+            //     // printf("0: unicode e=%02X\n", e);
+            // } while( e < encoding );
+            // luat_fs_fseek(u8g2->font_file, pos_unicode - unicode_lookup_pos, SEEK_CUR);
+            // printf("1: pos_unicode %d\n", pos_unicode);
+            // printf("1: unicode e=%02X\n", e);
+            // return NULL;
+            for(;;){
+                // e = u8x8_pgm_read( font );
+                // e <<= 8;
+                // e |= u8x8_pgm_read( font + 1 );
+                // if ( e == 0 )
+                //     break;
+                // if ( e == encoding ){
+                //     return font+3;	/* skip encoding and glyph size */
+                // }
+                // font += u8x8_pgm_read( font + 2 );
+
+                luat_fs_fread(font_data, 1, 3, u8g2->font_file);
+                e = font_data[0]<<8 | font_data[1];
+                if ( e == 0 )
+                    break;
+                // printf("2: unicode e=%02X\n", e);
+                if ( e == encoding ){
+                    if(u8g2->font){
+                        u8g2->font = luat_heap_realloc(u8g2->font, font_data[2] - 3);
+                    }else{
+                        u8g2->font = luat_heap_malloc(font_data[2] - 3);
+                    }
+                    luat_fs_fread(u8g2->font, 1, font_data[2] - 3, u8g2->font_file);
+                    return u8g2->font;
+                }
+                luat_fs_fseek(u8g2->font_file, font_data[2]-3, SEEK_CUR);
+            }  
+        }
+#endif
+        return NULL;
+    }
+#endif
   font += U8G2_FONT_DATA_STRUCT_SIZE;
 
   
@@ -838,16 +929,17 @@ const uint8_t *u8g2_font_get_glyph_data(u8g2_t *u8g2, uint16_t encoding)
 
     font += u8g2->font_info.start_pos_unicode;
     unicode_lookup_table = font; 
-  
     /* issue 596: search for the glyph start in the unicode lookup table */
+    uint8_t* pos_unicode = font;
     do
     {
       font += u8g2_font_get_word(unicode_lookup_table, 0);
       e = u8g2_font_get_word(unicode_lookup_table, 2);
       unicode_lookup_table+=4;
+    //printf("0: unicode e=%02X\n", e);
     } while( e < encoding );
-    
-  
+    // printf("1: pos_unicode %d\n", font - pos_unicode);
+    // printf("1: unicode e=%02X\n", e);
     for(;;)
     {
       e = u8x8_pgm_read( font );
@@ -862,7 +954,7 @@ const uint8_t *u8g2_font_get_glyph_data(u8g2_t *u8g2, uint16_t encoding)
 
       if ( e == 0 )
 	break;
-  
+//   printf("2: unicode e=%02X\n", e);
       if ( e == encoding )
       {
 // removed, there is now the new index table
@@ -1294,26 +1386,42 @@ void u8g2_SetFontPosCenter(u8g2_t *u8g2)
 
 void u8g2_SetFont(u8g2_t *u8g2, const uint8_t  *font)
 {
-  if ( u8g2->font != font )
+  if ( u8g2->font != font || font == NULL)
   {
 //#ifdef  __unix__
 //	u8g2->last_font_data = NULL;
 //	u8g2->last_unicode = 0x0ffff;
 //#endif 
     u8g2->font = font;
-    u8g2_read_font_info(&(u8g2->font_info), font);
+#if (defined __LUATOS__) || defined (__USER_CODE__)
+    if(font == NULL){
+        uint8_t font_info[U8G2_FONT_DATA_STRUCT_SIZE] = {0};
+        luat_fs_fseek(u8g2->font_file, 0, SEEK_SET);
+        luat_fs_fread(font_info, 1, U8G2_FONT_DATA_STRUCT_SIZE, u8g2->font_file);
+        u8g2_read_font_info(&(u8g2->font_info), font_info);
+    }else
+#endif
+    {
+#if (defined __LUATOS__) || defined (__USER_CODE__)
+        if (u8g2->font_file) {
+            luat_fs_fclose(u8g2->font_file);
+            u8g2->font_file = NULL;
+        }
+#endif
+        u8g2_read_font_info(&(u8g2->font_info), font);
+    }
     u8g2_UpdateRefHeight(u8g2);
     /* u8g2_SetFontPosBaseline(u8g2); */ /* removed with issue 195 */
 #if (defined __LUATOS__) || defined (__USER_CODE__)
 //探测一下是不是等宽字体
     const uint8_t *glyph_data = u8g2_font_get_glyph_data(u8g2, 'a');
-    int8_t x, y;
+    // int8_t x, y;
     int8_t d;
     u8g2_font_decode_t *decode = &(u8g2->font_decode);
 
     u8g2_font_setup_decode(u8g2, glyph_data);     /* set values in u8g2->font_decode data structure */
-    x = u8g2_font_decode_get_signed_bits(decode, u8g2->font_info.bits_per_char_x);
-    y = u8g2_font_decode_get_signed_bits(decode, u8g2->font_info.bits_per_char_y);
+    u8g2_font_decode_get_signed_bits(decode, u8g2->font_info.bits_per_char_x);
+    u8g2_font_decode_get_signed_bits(decode, u8g2->font_info.bits_per_char_y);
     d = u8g2_font_decode_get_signed_bits(decode, u8g2->font_info.bits_per_delta_x);
     luat_u8g2_is_equal_width = (d == u8g2->font_info.max_char_width);
 #endif
@@ -1376,7 +1484,7 @@ static u8g2_uint_t u8g2_string_width(u8g2_t *u8g2, const char *str)
     str++;
     if ( e != 0x0fffe )
     {
-      dx = u8g2_GetGlyphWidth(u8g2, e);		/* delta x value of the glyph */
+      dx = u8g2_GetGlyphWidth(u8g2, e);		/* delta x value of the glyph, side effect: updates u8g2->glyph_x_offset */
 #ifdef U8G2_BALANCED_STR_WIDTH_CALCULATION
       if ( initial_x_offset == -64 )
         initial_x_offset = u8g2->glyph_x_offset;
@@ -1404,6 +1512,28 @@ static u8g2_uint_t u8g2_string_width(u8g2_t *u8g2, const char *str)
   // printf("w=%d \n", w);
   
   return w;  
+}
+
+int8_t u8g2_GetXOffsetGlyph(u8g2_t *u8g2, uint16_t encoding)
+{
+  u8g2_GetGlyphWidth(u8g2, encoding);		/* delta x value of the glyph, side effect: updates u8g2->glyph_x_offset */
+  return u8g2->glyph_x_offset;
+}
+
+int8_t u8g2_GetXOffsetUTF8(u8g2_t *u8g2, const char *utf8)
+{
+  uint16_t e; 
+  u8x8_utf8_init(u8g2_GetU8x8(u8g2));
+  for(;;)  // extract encoding from UTF8 byte stream
+  {
+    e = u8x8_utf8_next(u8g2_GetU8x8(u8g2), (uint8_t)*utf8);
+    if ( e == 0x0ffff )
+      return 0;
+    if ( e < 0x0fffe )  // 0x0fffe means: just continue 
+      break;
+    utf8++;
+  }
+  return u8g2_GetXOffsetGlyph(u8g2, e);
 }
 
 static void u8g2_GetGlyphHorizontalProperties(u8g2_t *u8g2, uint16_t requested_encoding, uint8_t *w, int8_t *ox, int8_t *dx)
@@ -1567,4 +1697,60 @@ void u8g2_SetFontDirection(u8g2_t *u8g2, uint8_t dir)
 #endif
 }
 
+/*=======================================*/
+/*
+  Draw a string, which is produced by hbshape2u8g2 (libharfbuzz toolchain)
+
+  The data argument should look like this:
+    static const unsigned char teststring[] U8X8_PROGMEM = {
+      0x09, 0x28, 0x00, 0x00, // u8g2_DrawGlyph(&u8g2, 0, 0, 2344);
+      0x09, 0x2e, 0x10, 0x00, // u8g2_DrawGlyph(&u8g2, 16, 0, 2350);
+      0x09, 0x38, 0x10, 0x00, // u8g2_DrawGlyph(&u8g2, 32, 0, 2360);
+      0x09, 0x4d, 0x00, 0x00, // u8g2_DrawGlyph(&u8g2, 32, 0, 2381);
+      0x09, 0x24, 0x10, 0x00, // u8g2_DrawGlyph(&u8g2, 48, 0, 2340);
+      0x09, 0x47, 0x00, 0x00, // u8g2_DrawGlyph(&u8g2, 48, 0, 2375);
+      0x00, 0x00  // end of binary
+    };
+
+  The data row contains four bytes, which are:
+    <encoding high byte> <encoding low byte> <delta-x> <delta-y>
+  The last row is marked with encoding=0
+
+  The algorithm is
+    Input: x,y
+    with all rows (until encoding is 0)      
+      x += <delta-x>
+      y += <delta-y>
+      draw glyph with <encoding> at x, y
+
+  A call to this function will require transparent mode:
+    u8g2_SetFontMode(&u8g2, 1);
+    
+  Limitation:
+    Glyph delta must be lower than 128, this bascially means, that the glyph size is limited to
+    hight/width of 128 pixel
+    
+  Further details: 
+    https://github.com/olikraus/u8g2/issues/2656
+
+*/
+void u8g2_DrawHB(u8g2_t *u8g2, u8g2_uint_t x, u8g2_uint_t y, const unsigned char *data)
+{
+    uint16_t encoding = 0;
+    for (;;)
+    {
+        encoding = u8x8_pgm_read(data);
+        data++;
+        encoding <<= 8;
+        encoding  |= u8x8_pgm_read(data);
+        data++;
+        if (encoding == 0)
+            break;
+        x += (int8_t)u8x8_pgm_read(data);
+        data++;
+        y += (int8_t)u8x8_pgm_read(data);
+        data++;
+        u8g2_DrawGlyph(u8g2, x, y, encoding);
+    }
+}
 

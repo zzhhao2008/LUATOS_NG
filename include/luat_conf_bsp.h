@@ -2,7 +2,7 @@
 #ifndef LUAT_CONF_BSP
 #define LUAT_CONF_BSP
 
-#define LUAT_BSP_VERSION "V1008_2"
+#define LUAT_BSP_VERSION "V1008_3"
 
 
 //------------------------------------------------------
@@ -11,7 +11,7 @@
 //custom -->
 //------------------------------------------------------
 
-// #define LUAT_USE_TLS
+#define LUAT_USE_TLS
 #define LUAT_USE_SNTP
 // 禁用自动调用网络对时
 // #define LUAT_USE_SNTP_NOT_AUTO
@@ -205,7 +205,7 @@
 
 #define LUAT_USE_FS_VFS 1
 #define LUAT_USE_VFS_INLINE_LIB 1
-#define LUAT_COMPILER_NOWEAK
+//#define LUAT_COMPILER_NOWEAK
 #define LUAT_GPIO_PIN_MAX (CONFIG_SOC_GPIO_PIN_COUNT+1)
 // #define LUAT_CONF_SPI_HALF_DUPLEX_ONLY 1
 

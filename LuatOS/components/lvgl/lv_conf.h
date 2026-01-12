@@ -334,12 +334,12 @@ typedef void * lv_img_decoder_user_data_t;
 /* 1: use a custom tick source.
  * It removes the need to manually update the tick with `lv_tick_inc`) */
 #ifndef LV_TICK_CUSTOM
-#define LV_TICK_CUSTOM     0
+#define LV_TICK_CUSTOM     1
 #endif
 #if LV_TICK_CUSTOM == 1
 #ifndef LV_TICK_CUSTOM_INCLUDE
-#define LV_TICK_CUSTOM_INCLUDE  "Arduino.h"         /*Header for the system time function*/
-#define LV_TICK_CUSTOM_SYS_TIME_EXPR (millis())     /*Expression evaluating to current system time in ms*/
+#define LV_TICK_CUSTOM_INCLUDE  "luat_mcu.h"        /*Header for the system time function*/
+#define LV_TICK_CUSTOM_SYS_TIME_EXPR (luat_mcu_tick64_ms())     /*Expression evaluating to current system time in ms*/
 #endif
 #endif   /*LV_TICK_CUSTOM*/
 
@@ -352,7 +352,7 @@ typedef void * lv_indev_drv_user_data_t;            /*Type of user data in the i
 
 /*1: Enable the log module*/
 #ifndef LV_USE_LOG
-#define LV_USE_LOG      0
+#define LV_USE_LOG      1
 #endif
 #if LV_USE_LOG
 /* How important log should be added:
@@ -469,7 +469,7 @@ typedef void * lv_indev_drv_user_data_t;            /*Type of user data in the i
 /* Enables/disables support for compressed fonts. If it's disabled, compressed
  * glyphs cannot be processed by the library and won't be rendered.
  */
-#define LV_USE_FONT_COMPRESSED 0
+#define LV_USE_FONT_COMPRESSED 1
 
 /* Enable subpixel rendering */
 #define LV_USE_FONT_SUBPX 0
@@ -614,6 +614,7 @@ typedef void * lv_font_user_data_t;
 typedef struct luat_lv_userdata {
     int event_cb_ref;
     int signal_cb_ref;
+    void* easylvgl_component;  /* EasyLVGL component pointer */
 }luat_lv_userdata_t;
 
 typedef struct luat_lv_userdata lv_obj_user_data_t;

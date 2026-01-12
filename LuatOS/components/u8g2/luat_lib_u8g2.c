@@ -6,6 +6,10 @@
 @date    2021.01.25
 @demo u8g2
 @tag LUAT_USE_U8G2
+@usage
+-- 注意, 本库只支持普通SPI, 不支持LCD专用SPI
+-- 请确保已经正确连接了屏幕, 连接方式请参考demo
+-- OLED屏幕, 正确驱动才会显示内容, 不然就是黑屏的
 */
 #include "luat_base.h"
 #include "luat_mem.h"
@@ -34,6 +38,8 @@ static uint8_t spi_id;
 static uint8_t spi_res;
 static uint8_t spi_dc;
 static uint8_t spi_cs;
+static uint8_t spi_clk;
+static uint8_t spi_mosi;
 
 static const char* mode_strs[] = {
     "i2c_sw",
@@ -64,6 +70,7 @@ static const luat_u8g2_dev_reg_t devregs[] = {
     {.name="sh1106",  .w=128, .h=64, .spi_i2c=0, .devcb=u8g2_Setup_sh1106_i2c_128x64_noname_f},        // sh1106 128x64,I2C
     {.name="sh1106",  .w=128, .h=64, .spi_i2c=1, .devcb=u8g2_Setup_sh1106_128x64_noname_f},        // sh1106 128x64,SPI
     {.name="sh1107",  .w=64, .h=128, .spi_i2c=0, .devcb=u8g2_Setup_ssd1306_i2c_128x64_noname_f},       // sh1107 64x128
+    {.name="sh1107_128x128",  .w=128, .h=128, .spi_i2c=0, .devcb=u8g2_Setup_sh1107_i2c_128x128_f},       // sh1107 64x128
     {.name="sh1108",  .w=160, .h=160, .spi_i2c=0, .devcb=u8g2_Setup_sh1108_i2c_160x160_f},          // sh1108 160x160
     {.name="st7567",  .w=128, .h=64, .spi_i2c=1, .devcb=u8g2_Setup_st7567_jlx12864_f},                 // st7567 128x64
     {.name="uc1701",  .w=128, .h=64, .spi_i2c=1, .devcb=u8g2_Setup_uc1701_mini12864_f},                // uc1701
@@ -94,7 +101,7 @@ u8g2显示屏初始化
 -- 初始化硬件i2c的ssd1306
 u8g2.begin({ic = "ssd1306",direction = 0,mode="i2c_hw",i2c_id=0}) -- direction 可选0 90 180 270
 -- 初始化硬件spi的ssd1306
-u8g2.begin({ic = "ssd1306",direction = 0,mode="spi_hw_4pin",spi_id=0,spi_res=pin.PB03,spi_dc=pin.PB01,spi_cs=pin.PB04}) -- direction 可选0 90 180 270
+u8g2.begin({ic = "ssd1306",direction = 0,mode="spi_hw_4pin",spi_id=0,spi_res=20,spi_dc=21,spi_cs=24}) -- direction 可选0 90 180 270
 -- 初始化软件i2c的ssd1306
 u8g2.begin({ic = "ssd1306",direction = 0,mode="i2c_sw", i2c_scl=1, i2c_sda=4}) -- 通过PA1 SCL / PA4 SDA模拟
 */
@@ -231,6 +238,21 @@ static int l_u8g2_begin(lua_State *L) {
             spi_cs = luaL_checkinteger(L, -1);
         }
         lua_pop(L, 1);
+
+        lua_pushliteral(L, "spi_clk");
+        lua_gettable(L, 1);
+        if (lua_isinteger(L, -1)) {
+            spi_clk = luaL_checkinteger(L, -1);
+        }
+        lua_pop(L, 1);
+
+        lua_pushliteral(L, "spi_mosi");
+        lua_gettable(L, 1);
+        if (lua_isinteger(L, -1)) {
+            spi_mosi = luaL_checkinteger(L, -1);
+        }
+        lua_pop(L, 1);
+
         
         lua_pushliteral(L, "x_offset");
         lua_gettable(L, 1);
@@ -436,11 +458,17 @@ extern void luat_u8g2_set_ascii_indentation(uint8_t value);
 /*
 设置字体
 @api u8g2.SetFont(font, indentation)
-@userdata font, u8g2.font_opposansm8 为纯英文8号字体,还有font_opposansm10 font_opposansm12 font_opposansm16 font_opposansm18 font_opposansm20 font_opposansm22 font_opposansm24 font_opposansm32 可选 u8g2.font_opposansm12_chinese 为12x12全中文,还有 font_opposansm16_chinese font_opposansm24_chinese font_opposansm32_chinese 可选, u8g2.font_unifont_t_symbols 为符号.
+@userdata font, u8g2.font_opposansm8 为纯英文8号字体
 @int indentation, 等宽字体ascii右侧缩进0~127个pixel，等宽字体的ascii字符可能在右侧有大片空白，用户可以选择删除部分。留空或者超过127则直接删除右半边, 非等宽字体无效
 @usage
 -- 设置为中文字体,对之后的drawStr有效
 u8g2.SetFont(u8g2.font_opposansm12)
+-- font参数，根据模组的固件的不同，可能的取值有
+-- 英文类 
+-- font_opposansm10 font_opposansm12 font_opposansm16 
+-- font_opposansm18 font_opposansm20 font_opposansm22 font_opposansm24 font_opposansm32
+-- 中文类 u8g2.font_opposansm12_chinese 为12x12全中文
+-- font_opposansm16_chinese font_opposansm24_chinese font_opposansm32_chinese 可选
 */
 static int l_u8g2_SetFont(lua_State *L) {
     if (conf == NULL) {
@@ -669,16 +697,7 @@ static int l_u8g2_DrawRFrame(lua_State *L){
     return 0;
 }
 
-/*
-绘制一个图形字符。字符放置在指定的像素位置x和y.
-@api u8g2.DrawGlyph(x,y,encoding)
-@int 字符在显示屏上的位置
-@int 字符在显示屏上的位置
-@int 字符的Unicode值
-@usage
-u8g2.SetFont(u8g2_font_unifont_t_symbols)
-u8g2.DrawGlyph(5, 20, 0x2603)	-- dec 9731/hex 2603 Snowman
-*/
+// 废弃该函数
 static int l_u8g2_DrawGlyph(lua_State *L){
     if (conf == NULL) return 0;
     u8g2_DrawGlyph(&conf->u8g2,luaL_checkinteger(L, 1),luaL_checkinteger(L, 2),luaL_checkinteger(L, 3));
@@ -820,9 +839,7 @@ static int l_u8g2_SetContrast(lua_State *L)
 
 #ifdef LUAT_USE_GTFONT
 
-#include "GT5SLCD2E_1A.h"
-extern unsigned int gtfont_draw_w(unsigned char *pBits,unsigned int x,unsigned int y,unsigned int size,unsigned int widt,unsigned int high,int(*point)(void*),void* userdata,int mode);
-extern void gtfont_draw_gray_hz(unsigned char *data,unsigned short x,unsigned short y,unsigned short w ,unsigned short h,unsigned char grade, unsigned char HB_par,int(*point)(void*,uint16_t, uint16_t, uint32_t),void* userdata,int mode);
+#include "luat_gtfont.h"
 
 static int gtfont_u8g2_DrawPixel(u8g2_t *u8g2, uint16_t x, uint16_t y,uint32_t color){
     u8g2_DrawPixel(&conf->u8g2,x, y);
@@ -842,7 +859,7 @@ u8g2.drawGtfontGb2312("啊啊啊",32,0,0)
 */
 static int l_u8g2_draw_gtfont_gb2312(lua_State *L) {
     unsigned char buf[128];
-	int len;
+	size_t len;
 	int i = 0;
 	uint8_t strhigh,strlow ;
 	uint16_t str;
@@ -869,7 +886,6 @@ static int l_u8g2_draw_gtfont_gb2312(lua_State *L) {
 }
 
 #ifdef LUAT_USE_GTFONT_UTF8
-extern unsigned short unicodetogb2312 ( unsigned short	chr);
 
 static uint8_t utf8_state;
 static uint16_t encoding;
@@ -935,31 +951,39 @@ static uint16_t utf8_next(uint8_t b)
 u8g2.drawGtfontUtf8("啊啊啊",32,0,0)
 */
 static int l_u8g2_draw_gtfont_utf8(lua_State *L) {
-    unsigned char buf[128];
-    int len;
-    int i = 0;
-    uint8_t strhigh,strlow ;
-    uint16_t e,str;
+    size_t len;
     const char *fontCode = luaL_checklstring(L, 1,&len);
     unsigned char size = luaL_checkinteger(L, 2);
     int x = luaL_checkinteger(L, 3);
     int y = luaL_checkinteger(L, 4);
+    int buff_size = size*size/8+512;
+    unsigned char* buf = luat_heap_malloc(buff_size);
+    if (buf == NULL){
+        LLOGE("malloc error");
+        return 0;
+    }
     for(;;){
-        e = utf8_next((uint8_t)*fontCode);
+        memset(buf,0,buff_size);
+        uint16_t e = utf8_next((uint8_t)*fontCode);
         if ( e == 0x0ffff )
         break;
         fontCode++;
         if ( e != 0x0fffe ){
-            uint16_t str = unicodetogb2312(e);
+            uint16_t str = gt_unicode2gb18030(e);
             int font_size = get_font(buf, str<0x80?VEC_HZ_ASCII_STY:VEC_BLACK_STY, str, size, size, size);
             if(font_size == 0){
                 LLOGW("get gtfont error size:%d font_size:%d",size,font_size);
                 return 0;
             }
-            gtfont_draw_w(buf , x ,y , font_size,size , size,gtfont_u8g2_DrawPixel,&conf->u8g2,2);
-            x+=size;
+            unsigned int dw = gtfont_draw_w(buf , x ,y , font_size,size , size,gtfont_u8g2_DrawPixel,&conf->u8g2,2);
+            if (str==0x20){
+                x+=size/2;
+            }else{
+                x+=(str<0x80)?dw:size; 
+            }
         }
     }
+    luat_heap_free(buf);
     return 0;
 }
 
@@ -1070,8 +1094,10 @@ static const rotable_Reg_t reg_u8g2[] =
     { "font_opposansm10", ROREG_PTR((void*)u8g2_font_opposansm10)},
     { "font_opposansm12", ROREG_PTR((void*)u8g2_font_opposansm12)},
 #ifdef USE_U8G2_OPPOSANSM_ENGLISH
+    #ifndef LUAT_CONF_FONT_SYMBOLS_DISABLE
     { "font_unifont_t_symbols",   ROREG_PTR((void*)u8g2_font_unifont_t_symbols)},
     { "font_open_iconic_weather_6x_t", ROREG_PTR((void*)u8g2_font_open_iconic_weather_6x_t)},
+    #endif
     { "font_opposansm16", ROREG_PTR((void*)u8g2_font_opposansm16)},
     { "font_opposansm18", ROREG_PTR((void*)u8g2_font_opposansm18)},
     { "font_opposansm20", ROREG_PTR((void*)u8g2_font_opposansm20)},
@@ -1146,6 +1172,10 @@ static const rotable_Reg_t reg_u8g2[] =
 #endif
 #ifdef USE_U8G2_SARASA_M28_CHINESE
     { "font_sarasa_m28_chinese", ROREG_PTR((void*)u8g2_font_sarasa_m28_chinese)},
+#endif
+
+#ifdef USE_U8G2_ZFULL_R16_CHINESE
+    { "font_zfull_r16_chinese", ROREG_PTR((void*)u8g2_font_zfull_r16_chinese)},
 #endif
 
     //@const DRAW_UPPER_RIGHT number 上右
@@ -1252,6 +1282,22 @@ int luat_u8g2_setup_default(luat_u8g2_conf_t *conf) {
         u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_CS, spi_cs);
         u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_DC, spi_dc);
         u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_RESET, spi_res);
+    } else if (pinType == 3) {
+        devreg->devcb(u8g2, conf->direction, u8x8_byte_3wire_sw_spi, u8x8_luat_gpio_and_delay_default);
+        LLOGD("setup disp 3wire_sw_spi  spi_clk=%d spi_mosi=%d spi_dc=%d spi_cs=%d spi_res=%d",spi_clk,spi_mosi,spi_dc,spi_cs,spi_res);
+        u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_CS, spi_cs);
+        u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_DC, spi_dc);
+        u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_RESET, spi_res);
+        u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_SPI_CLOCK, spi_clk);
+        u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_SPI_DATA, spi_mosi);
+    } else if (pinType == 4) {
+        devreg->devcb(u8g2, conf->direction, u8x8_byte_4wire_sw_spi, u8x8_luat_gpio_and_delay_default);
+        LLOGD("setup disp 4wire_sw_spi  spi_clk=%d spi_mosi=%d spi_dc=%d spi_cs=%d spi_res=%d",spi_clk,spi_mosi,spi_dc,spi_cs,spi_res);
+        u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_CS, spi_cs);
+        u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_DC, spi_dc);
+        u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_RESET, spi_res);
+        u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_SPI_CLOCK, spi_clk);
+        u8x8_SetPin(u8g2_GetU8x8(u8g2), U8X8_PIN_SPI_DATA, spi_mosi);
     } else {
         LLOGI("no such u8g2 mode!!");
         return -1;
