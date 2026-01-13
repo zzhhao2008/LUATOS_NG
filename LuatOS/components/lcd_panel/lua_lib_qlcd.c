@@ -57,6 +57,9 @@ static esp_lcd_panel_handle_t panel_handle = NULL;
 static esp_lcd_panel_io_handle_t io_handle = NULL;
 static lv_disp_t *disp = NULL;
 static bool is_initialized = false;
+static lv_color_t *disp_buf1 = NULL; // 为LVGL显示缓冲区添加全局变量
+static lv_color_t *disp_buf2 = NULL; // 可选的第二个缓冲区（用于双缓冲）
+static lv_disp_buf_t disp_buf;       // LVGL显示缓冲区结构
 
 // 配置结构
 typedef struct {
@@ -270,34 +273,55 @@ static int l_qlcd_lvgl_register(lua_State *L) {
         return 1;
     }
 
+    // 检查是否已经注册过，如果是，先清理旧的资源
+    if (disp != NULL) {
+        LLOGW("LVGL display already registered, cleaning up old resources");
+        lv_disp_remove(disp);
+        disp = NULL;
+    }
+
+    // 释放之前分配的缓冲区内存
+    if (disp_buf1) {
+        heap_caps_free(disp_buf1);
+        disp_buf1 = NULL;
+    }
+    
+    if (disp_buf2) {
+        heap_caps_free(disp_buf2);
+        disp_buf2 = NULL;
+    }
+
     // 初始化LVGL
     lv_init();
 
-    // 创建显示缓冲区
-    static lv_color_t *buf = NULL;
-    if (buf == NULL) {
-        buf = (lv_color_t *)heap_caps_malloc(
-            lcd_config.width * lcd_config.draw_buf_height * sizeof(lv_color_t),
-            MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-        if (buf == NULL) {
-            LLOGE("Failed to allocate LVGL buffer");
-            lua_pushboolean(L, 0);
-            return 1;
-        }
+    // 分配显示缓冲区
+    size_t buf_size = lcd_config.width * lcd_config.draw_buf_height;
+    disp_buf1 = (lv_color_t *)heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (disp_buf1 == NULL) {
+        LLOGE("Failed to allocate first LVGL display buffer");
+        lua_pushboolean(L, 0);
+        return 1;
     }
 
-    // 关联缓冲区到LVGL - 修复LVGL版本兼容性问题
-    lv_disp_buf_t draw_buf;  // 使用lv_disp_buf_t而不是lv_disp_draw_buf_t
-    lv_disp_buf_init(&draw_buf, buf, NULL, lcd_config.width * lcd_config.draw_buf_height);  // 使用lv_disp_buf_init
+    // 初始化显示缓冲区结构
+    lv_disp_buf_init(&disp_buf, disp_buf1, disp_buf2, buf_size);
 
     // 初始化显示驱动
     lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = lcd_config.width;
     disp_drv.ver_res = lcd_config.height;
-    disp_drv.flush_cb = _disp_flush;  // 此处不会再报错，因为函数已在前面声明
-    disp_drv.buffer = &draw_buf;  // 使用buffer而不是draw_buf
+    disp_drv.flush_cb = _disp_flush;
+    disp_drv.buffer = &disp_buf;
     disp = lv_disp_drv_register(&disp_drv);
+
+    if (disp == NULL) {
+        LLOGE("Failed to register display with LVGL");
+        heap_caps_free(disp_buf1);
+        disp_buf1 = NULL;
+        lua_pushboolean(L, 0);
+        return 1;
+    }
 
     LLOGI("QLCD registered with LVGL successfully");
     lua_pushboolean(L, 1);
@@ -362,11 +386,61 @@ static int l_qlcd_clear(lua_State *L) {
     return 1;
 }
 
+/*
+清理资源
+@api qlcd.cleanup()
+@usage
+qlcd.cleanup()
+*/
+static int l_qlcd_cleanup(lua_State *L) {
+    // 移除LVGL显示设备
+    if (disp != NULL) {
+        lv_disp_remove(disp);
+        disp = NULL;
+    }
+
+    // 释放缓冲区
+    if (disp_buf1) {
+        heap_caps_free(disp_buf1);
+        disp_buf1 = NULL;
+    }
+    
+    if (disp_buf2) {
+        heap_caps_free(disp_buf2);
+        disp_buf2 = NULL;
+    }
+
+    // 删除LCD面板
+    if (panel_handle) {
+        esp_lcd_panel_del(panel_handle);
+        panel_handle = NULL;
+    }
+
+    // 删除面板IO
+    if (io_handle) {
+        esp_lcd_panel_io_del(io_handle);
+        io_handle = NULL;
+    }
+
+    // 释放SPI总线
+    if (lcd_config.spi_host >= 0) {
+        spi_bus_free(lcd_config.spi_host);
+    }
+
+    is_initialized = false;
+    
+    LLOGI("QLCD resources cleaned up");
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 #include "rotable2.h"
 static const rotable_Reg_t reg_qlcd[] = {
     { "init",           ROREG_FUNC(l_qlcd_init) },
     { "lvgl_register",  ROREG_FUNC(l_qlcd_lvgl_register) },
+    //{ "initlvgl",       ROREG_FUNC(l_qlcd_initlvgl) },
     { "clear",          ROREG_FUNC(l_qlcd_clear) },
+    { "cleanup",        ROREG_FUNC(l_qlcd_cleanup) },
     // 常量定义
     { "SPI_HOST_1",     ROREG_INT(SPI1_HOST) },
     { "SPI_HOST_2",     ROREG_INT(SPI2_HOST) },
