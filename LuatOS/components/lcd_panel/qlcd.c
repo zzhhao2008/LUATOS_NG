@@ -119,7 +119,7 @@ esp_err_t qlcd_init(int width, int height, int spi_host, int mosi_pin, int clk_p
     
     // 控制背光
     if (lcd_config.bl_pin >= 0) {
-        gpio_pad_select_gpio(lcd_config.bl_pin);
+        esp_rom_gpio_pad_select_gpio(lcd_config.bl_pin);  // 使用正确的函数名
         gpio_set_direction(lcd_config.bl_pin, GPIO_MODE_OUTPUT);
         gpio_set_level(lcd_config.bl_pin, 1); // 开启背光
     }
@@ -153,9 +153,9 @@ esp_err_t qlcd_lvgl_register(void) {
         }
     }
 
-    // 关联缓冲区到LVGL
-    lv_disp_draw_buf_t draw_buf;
-    lv_disp_draw_buf_init(&draw_buf, buf1, NULL, lcd_config.width * lcd_config.draw_buf_height);
+    // 关联缓冲区到LVGL - 修复LVGL版本兼容性问题
+    lv_disp_buf_t draw_buf;  // 使用lv_disp_buf_t而不是lv_disp_draw_buf_t
+    lv_disp_buf_init(&draw_buf, buf1, NULL, lcd_config.width * lcd_config.draw_buf_height);  // 使用lv_disp_buf_init
 
     // 初始化显示驱动
     lv_disp_drv_t disp_drv;
@@ -163,7 +163,7 @@ esp_err_t qlcd_lvgl_register(void) {
     disp_drv.hor_res = lcd_config.width;
     disp_drv.ver_res = lcd_config.height;
     disp_drv.flush_cb = _disp_flush;
-    disp_drv.draw_buf = &draw_buf;
+    disp_drv.buffer = &draw_buf;  // 使用buffer而不是draw_buf
     disp = lv_disp_drv_register(&disp_drv);
 
     ESP_LOGI(TAG, "QLCD registered with LVGL successfully");

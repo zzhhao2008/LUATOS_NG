@@ -12,6 +12,7 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_panel_ops.h"
+#include "driver/gpio.h"  // 添加GPIO_NUM_NC定义
 
 // QLCD相关函数声明
 esp_err_t qlcd_init(int width, int height, int spi_host, int mosi_pin, int clk_pin, int dc_pin, int rst_pin, int cs_pin, int bl_pin, int freq, int draw_buf_height);

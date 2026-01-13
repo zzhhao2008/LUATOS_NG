@@ -2,7 +2,7 @@
 #ifndef LUAT_CONF_BSP
 #define LUAT_CONF_BSP
 
-#define LUAT_BSP_VERSION "V1008_2"
+#define LUAT_BSP_VERSION "V1008_4"
 
 
 //------------------------------------------------------
@@ -42,7 +42,7 @@
 
 #define LUAT_USE_FT6636 1
 #define LUAT_USE_QLCD 1
-#define LUAT_USE_TOUCHKEY 1
+//#define LUAT_USE_TOUCHKEY 1
 
 
 //----------------------------

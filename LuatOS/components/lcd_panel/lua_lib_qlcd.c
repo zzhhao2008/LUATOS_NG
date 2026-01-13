@@ -37,6 +37,7 @@ qlcd.lvgl_register()
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_rgb.h"
 #include "driver/spi_master.h"
+#include "driver/gpio.h"  // 添加GPIO_NUM_NC定义
 #include "lvgl.h"
 #include "luat_lcd.h"
 
@@ -85,6 +86,9 @@ static qlcd_config_t lcd_config = {
     .freq = 40000000, // 40MHz
     .draw_buf_height = 20
 };
+
+// 声明显示刷新回调函数
+static void _disp_flush(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
 
 /*
 初始化QLCD液晶屏
@@ -282,17 +286,17 @@ static int l_qlcd_lvgl_register(lua_State *L) {
         }
     }
 
-    // 关联缓冲区到LVGL
-    lv_disp_draw_buf_t draw_buf;
-    lv_disp_draw_buf_init(&draw_buf, buf, NULL, lcd_config.width * lcd_config.draw_buf_height);
+    // 关联缓冲区到LVGL - 修复LVGL版本兼容性问题
+    lv_disp_buf_t draw_buf;  // 使用lv_disp_buf_t而不是lv_disp_draw_buf_t
+    lv_disp_buf_init(&draw_buf, buf, NULL, lcd_config.width * lcd_config.draw_buf_height);  // 使用lv_disp_buf_init
 
     // 初始化显示驱动
     lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = lcd_config.width;
     disp_drv.ver_res = lcd_config.height;
-    disp_drv.flush_cb = _disp_flush;
-    disp_drv.draw_buf = &draw_buf;
+    disp_drv.flush_cb = _disp_flush;  // 此处不会再报错，因为函数已在前面声明
+    disp_drv.buffer = &draw_buf;  // 使用buffer而不是draw_buf
     disp = lv_disp_drv_register(&disp_drv);
 
     LLOGI("QLCD registered with LVGL successfully");
