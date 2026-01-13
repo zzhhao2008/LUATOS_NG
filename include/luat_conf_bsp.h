@@ -41,6 +41,9 @@
 #define LUAT_USE_ULWIP 1
 
 #define LUAT_USE_FT6636 1
+#define LUAT_USE_QLCD 1
+#define LUAT_USE_TOUCHKEY 1
+
 
 //----------------------------
 // 常用工具库, 按需启用, cjson和pack是强烈推荐启用的
