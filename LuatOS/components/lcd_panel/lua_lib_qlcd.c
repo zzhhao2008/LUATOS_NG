@@ -1,97 +1,16 @@
 /*
-@module  qlcd
-@summary QLCD液晶屏驱动
-@version 1.0
-@date    2026.01.13
-@demo qlcd
-@usage
--- 初始化LCD
-local qlcd = require "qlcd"
-local success = qlcd.init({
-    width = 320,
-    height = 240,
-    spi_host = 3, -- SPI3_HOST
-    mosi_pin = 17,
-    clk_pin = 18,
-    dc_pin = 15,
-    rst_pin = 7,
-    cs_pin = 6,
-    bl_pin = 16, -- 背光控制引脚
-    freq = 40000000, -- 40MHz
-    draw_buf_height = 20 -- 绘制缓冲区高度
-})
-if not success then
-    log.error("qlcd", "init failed")
-    return
-end
--- 将LCD注册到LVGL
-qlcd.lvgl_register()
+QLCD液晶屏驱动 - Lua API封装
+仅负责与Lua虚拟机的交互，调用qlcd.c中的核心函数
 */
 #include "luat_base.h"
 #include "luat_gpio.h"
 #include "luat_rtos.h"
 #include "esp_log.h"
-#include "esp_lcd_types.h"
-#include "esp_lcd_panel_io.h"
-#include "esp_lcd_panel_vendor.h"
-#include "esp_lcd_panel_ops.h"
-#include "esp_lcd_panel_rgb.h"
-#include "driver/spi_master.h"
-#include "driver/gpio.h"  // 添加GPIO_NUM_NC定义
 #include "lvgl.h"
-#include "luat_lcd.h"
+#include "qlcd.h"
 
 #define LUAT_LOG_TAG "qlcd"
 #include "luat_log.h"
-
-// 定义默认参数
-#define DEFAULT_LCD_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
-#define DEFAULT_LCD_SPI_NUM (SPI3_HOST)
-#define LCD_CMD_BITS (8)
-#define LCD_PARAM_BITS (8)
-#define DEFAULT_LCD_BITS_PER_PIXEL (16)
-#define DEFAULT_LCD_DRAW_BUF_HEIGHT (20)
-
-// 全局变量
-static esp_lcd_panel_handle_t panel_handle = NULL;
-static esp_lcd_panel_io_handle_t io_handle = NULL;
-static lv_disp_t *disp = NULL;
-static bool is_initialized = false;
-static lv_color_t *disp_buf1 = NULL; // 为LVGL显示缓冲区添加全局变量
-static lv_color_t *disp_buf2 = NULL; // 可选的第二个缓冲区（用于双缓冲）
-static lv_disp_buf_t disp_buf;       // LVGL显示缓冲区结构
-
-// 配置结构
-typedef struct {
-    int width;
-    int height;
-    int spi_host;
-    int mosi_pin;
-    int clk_pin;
-    int dc_pin;
-    int rst_pin;
-    int cs_pin;
-    int bl_pin;
-    int freq;
-    int draw_buf_height;
-} qlcd_config_t;
-
-static qlcd_config_t lcd_config = {
-    .width = 320,
-    .height = 240,
-    .spi_host = 3, // SPI3_HOST
-    .mosi_pin = 17,
-    .clk_pin = 18,
-    .dc_pin = 15,
-    .rst_pin = 7,
-    .cs_pin = 6,
-    .bl_pin = 16, // 背光控制引脚
-    .freq = 40000000, // 40MHz
-    .draw_buf_height = 20
-};
-
-// 声明显示刷新回调函数
-static void _disp_flush(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
 
 /*
 初始化QLCD液晶屏
@@ -99,13 +18,12 @@ static void _disp_flush(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *c
 @table config 配置参数
 @int config.width 屏幕宽度，默认320
 @int config.height 屏幕高度，默认240
-@int config.spi_host SPI主机号，默认SPI3_HOST(3)
+@int config.spi_host SPI主机号，默认SPI3_HOST(2)
 @int config.mosi_pin MOSI引脚，默认17
 @int config.clk_pin CLK引脚，默认18
 @int config.dc_pin DC引脚，默认15
 @int config.rst_pin RST引脚，默认7
 @int config.cs_pin CS引脚，默认6
-@int config.bl_pin 背光引脚，默认16
 @int config.freq SPI频率，默认40MHz
 @int config.draw_buf_height 绘制缓冲区高度，默认20
 @return boolean 是否成功
@@ -113,147 +31,87 @@ static void _disp_flush(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *c
 local success = qlcd.init({
     width = 320,
     height = 240,
-    freq = 40000000
+    spi_host = 2,
+    mosi_pin = 17,
+    clk_pin = 18,
+    dc_pin = 15,
+    rst_pin = 7,
+    cs_pin = 6,
+    freq = 40000000,
+    draw_buf_height = 40
 })
 */
 static int l_qlcd_init(lua_State *L) {
+    qlcd_config_t config = {
+        .width = 320,
+        .height = 240,
+        .spi_host = SPI3_HOST, // 默认SPI3_HOST
+        .mosi_pin = 17,
+        .clk_pin = 18,
+        .dc_pin = 15,
+        .rst_pin = 7,
+        .cs_pin = 6,
+        .freq = 40000000, // 40MHz
+        .draw_buf_height = 20
+    };
+    
     if (lua_type(L, 1) == LUA_TTABLE) {
         // 从配置表读取参数
         lua_getfield(L, 1, "width");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.width = luaL_checkinteger(L, -1);
-        }
+        if (lua_isinteger(L, -1)) config.width = luaL_checkinteger(L, -1);
         lua_pop(L, 1);
-
+        
         lua_getfield(L, 1, "height");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.height = luaL_checkinteger(L, -1);
-        }
+        if (lua_isinteger(L, -1)) config.height = luaL_checkinteger(L, -1);
         lua_pop(L, 1);
-
+        
         lua_getfield(L, 1, "spi_host");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.spi_host = luaL_checkinteger(L, -1);
-        }
+        if (lua_isinteger(L, -1)) config.spi_host = luaL_checkinteger(L, -1);
         lua_pop(L, 1);
-
+        
         lua_getfield(L, 1, "mosi_pin");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.mosi_pin = luaL_checkinteger(L, -1);
-        }
+        if (lua_isinteger(L, -1)) config.mosi_pin = luaL_checkinteger(L, -1);
         lua_pop(L, 1);
-
+        
         lua_getfield(L, 1, "clk_pin");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.clk_pin = luaL_checkinteger(L, -1);
-        }
+        if (lua_isinteger(L, -1)) config.clk_pin = luaL_checkinteger(L, -1);
         lua_pop(L, 1);
-
+        
         lua_getfield(L, 1, "dc_pin");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.dc_pin = luaL_checkinteger(L, -1);
-        }
+        if (lua_isinteger(L, -1)) config.dc_pin = luaL_checkinteger(L, -1);
         lua_pop(L, 1);
-
+        
         lua_getfield(L, 1, "rst_pin");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.rst_pin = luaL_checkinteger(L, -1);
-        }
+        if (lua_isinteger(L, -1)) config.rst_pin = luaL_checkinteger(L, -1);
         lua_pop(L, 1);
-
+        
         lua_getfield(L, 1, "cs_pin");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.cs_pin = luaL_checkinteger(L, -1);
-        }
+        if (lua_isinteger(L, -1)) config.cs_pin = luaL_checkinteger(L, -1);
         lua_pop(L, 1);
-
-        lua_getfield(L, 1, "bl_pin");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.bl_pin = luaL_checkinteger(L, -1);
-        }
-        lua_pop(L, 1);
-
+        
         lua_getfield(L, 1, "freq");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.freq = luaL_checkinteger(L, -1);
-        }
+        if (lua_isinteger(L, -1)) config.freq = luaL_checkinteger(L, -1);
         lua_pop(L, 1);
-
+        
         lua_getfield(L, 1, "draw_buf_height");
-        if (lua_isinteger(L, -1)) {
-            lcd_config.draw_buf_height = luaL_checkinteger(L, -1);
-        }
+        if (lua_isinteger(L, -1)) config.draw_buf_height = luaL_checkinteger(L, -1);
         lua_pop(L, 1);
     }
-
-    // 初始化SPI总线
-    ESP_LOGI(LUAT_LOG_TAG, "Initialize SPI bus");
-    const spi_bus_config_t buscfg = {
-        .sclk_io_num = lcd_config.clk_pin,
-        .mosi_io_num = lcd_config.mosi_pin,
-        .miso_io_num = GPIO_NUM_NC,
-        .quadwp_io_num = GPIO_NUM_NC,
-        .quadhd_io_num = GPIO_NUM_NC,
-        .max_transfer_sz = lcd_config.width * lcd_config.height * sizeof(uint16_t),
-    };
-    esp_err_t ret = spi_bus_initialize(lcd_config.spi_host, &buscfg, SPI_DMA_CH_AUTO);
-    if (ret != ESP_OK) {
-        LLOGE("SPI init failed: %s", esp_err_to_name(ret));
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
-    // 初始化面板IO
-    ESP_LOGI(LUAT_LOG_TAG, "Install panel IO");
-    const esp_lcd_panel_io_spi_config_t io_config = {
-        .dc_gpio_num = lcd_config.dc_pin,
-        .cs_gpio_num = lcd_config.cs_pin,
-        .pclk_hz = lcd_config.freq,
-        .lcd_cmd_bits = LCD_CMD_BITS,
-        .lcd_param_bits = LCD_PARAM_BITS,
-        .spi_mode = 2,
-        .trans_queue_depth = 10,
-    };
-    ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)lcd_config.spi_host, &io_config, &io_handle);
-    if (ret != ESP_OK) {
-        LLOGE("New panel IO failed: %s", esp_err_to_name(ret));
-        spi_bus_free(lcd_config.spi_host);
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
-    // 初始化ST7789面板
-    ESP_LOGD(LUAT_LOG_TAG, "Install LCD driver");
-    const esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = lcd_config.rst_pin,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
-        .bits_per_pixel = DEFAULT_LCD_BITS_PER_PIXEL,
-    };
-    ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle);
-    if (ret != ESP_OK) {
-        LLOGE("New panel failed: %s", esp_err_to_name(ret));
-        esp_lcd_panel_io_del(io_handle);
-        spi_bus_free(lcd_config.spi_host);
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
-    // 初始化面板
-    esp_lcd_panel_reset(panel_handle);
-    esp_lcd_panel_init(panel_handle);
-    esp_lcd_panel_invert_color(panel_handle, true);  // 颜色反转
-    esp_lcd_panel_swap_xy(panel_handle, true);       // 显示翻转
-    esp_lcd_panel_mirror(panel_handle, false, true); // 镜像
-
-    // 开启显示
-    esp_lcd_panel_disp_on_off(panel_handle, true);
     
-    // 控制背光
-    if (lcd_config.bl_pin >= 0) {
-        luat_gpio_mode(lcd_config.bl_pin, Luat_GPIO_OUTPUT, Luat_GPIO_PULLUP, 1);
+    // 检查引脚是否有效
+    if (config.mosi_pin < 0 || config.clk_pin < 0 || config.dc_pin < 0 || config.cs_pin < 0) {
+        LLOGE("Invalid pin configuration");
+        lua_pushboolean(L, 0);
+        return 1;
     }
-
-    is_initialized = true;
+    
+    esp_err_t ret = qlcd_init(&config);
+    if (ret != ESP_OK) {
+        LLOGE("QLCD init failed: %s", esp_err_to_name(ret));
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    
     LLOGI("QLCD initialized successfully");
     lua_pushboolean(L, 1);
     return 1;
@@ -267,81 +125,69 @@ static int l_qlcd_init(lua_State *L) {
 qlcd.lvgl_register()
 */
 static int l_qlcd_lvgl_register(lua_State *L) {
-    if (!is_initialized) {
+    qlcd_state_t *state = qlcd_get_state();
+    if (!state->is_initialized) {
         LLOGE("QLCD not initialized");
         lua_pushboolean(L, 0);
         return 1;
     }
-
-    // 检查是否已经注册过，如果是，先清理旧的资源
-    if (disp != NULL) {
-        LLOGW("LVGL display already registered, cleaning up old resources");
-        lv_disp_remove(disp);
-        disp = NULL;
-    }
-
-    // 释放之前分配的缓冲区内存
-    if (disp_buf1) {
-        heap_caps_free(disp_buf1);
-        disp_buf1 = NULL;
+    
+    esp_err_t ret = qlcd_lvgl_register();
+    if (ret != ESP_OK) {
+        LLOGE("LVGL register failed: %s", esp_err_to_name(ret));
+        lua_pushboolean(L, 0);
+        return 1;
     }
     
-    if (disp_buf2) {
-        heap_caps_free(disp_buf2);
-        disp_buf2 = NULL;
-    }
-
-    // 初始化LVGL
-    lv_init();
-
-    // 分配显示缓冲区
-    size_t buf_size = lcd_config.width * lcd_config.draw_buf_height;
-    disp_buf1 = (lv_color_t *)heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (disp_buf1 == NULL) {
-        LLOGE("Failed to allocate first LVGL display buffer");
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
-    // 初始化显示缓冲区结构
-    lv_disp_buf_init(&disp_buf, disp_buf1, disp_buf2, buf_size);
-
-    // 初始化显示驱动
-    lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = lcd_config.width;
-    disp_drv.ver_res = lcd_config.height;
-    disp_drv.flush_cb = _disp_flush;
-    disp_drv.buffer = &disp_buf;
-    disp = lv_disp_drv_register(&disp_drv);
-
-    if (disp == NULL) {
-        LLOGE("Failed to register display with LVGL");
-        heap_caps_free(disp_buf1);
-        disp_buf1 = NULL;
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
     LLOGI("QLCD registered with LVGL successfully");
     lua_pushboolean(L, 1);
     return 1;
 }
 
 /*
-显示刷新回调函数
+LCD进入休眠模式
+@api qlcd.sleep()
+@return boolean 是否成功
+@usage
+qlcd.sleep()
 */
-static void _disp_flush(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map) {
-    int x1 = area->x1;
-    int y1 = area->y1;
-    int x2 = area->x2;
-    int y2 = area->y2;
+static int l_qlcd_sleep(lua_State *L) {
+    qlcd_state_t *state = qlcd_get_state();
+    if (!state->is_initialized) {
+        LLOGE("QLCD not initialized");
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    
+    esp_err_t ret = qlcd_sleep();
+    if (ret != ESP_OK) {
+        LLOGE("Sleep failed: %s", esp_err_to_name(ret));
+    }
+    lua_pushboolean(L, ret == ESP_OK);
+    return 1;
+}
 
-    // 发送数据到LCD
-    esp_lcd_panel_draw_bitmap(panel_handle, x1, y1, x2 + 1, y2 + 1, (uint16_t *)color_map);
-
-    // 通知LVGL完成刷新
-    lv_disp_flush_ready(drv);
+/*
+LCD唤醒
+@api qlcd.wakeup()
+@return boolean 是否成功
+@usage
+qlcd.wakeup()
+*/
+static int l_qlcd_wakeup(lua_State *L) {
+    qlcd_state_t *state = qlcd_get_state();
+    if (!state->is_initialized) {
+        LLOGE("QLCD not initialized");
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    
+    esp_err_t ret = qlcd_wakeup();
+    if (ret != ESP_OK) {
+        LLOGE("Wakeup failed: %s", esp_err_to_name(ret));
+    }
+    lua_pushboolean(L, ret == ESP_OK);
+    return 1;
 }
 
 /*
@@ -352,36 +198,19 @@ static void _disp_flush(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *c
 qlcd.clear(0xFFFF) -- 白色清屏
 */
 static int l_qlcd_clear(lua_State *L) {
-    if (!is_initialized) {
+    qlcd_state_t *state = qlcd_get_state();
+    if (!state->is_initialized) {
         LLOGE("QLCD not initialized");
         lua_pushboolean(L, 0);
         return 1;
     }
-
+    
     uint16_t color = 0x0000; // 默认黑色
     if (lua_isinteger(L, 1)) {
         color = luaL_checkinteger(L, 1) & 0xFFFF;
     }
-
-    // 分配临时缓冲区填充屏幕
-    uint16_t *buffer = (uint16_t *)heap_caps_malloc(lcd_config.width * sizeof(uint16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    if (buffer == NULL) {
-        LLOGE("Memory for bitmap is not enough");
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
-    // 填充缓冲区
-    for (int i = 0; i < lcd_config.width; i++) {
-        buffer[i] = color;
-    }
-
-    // 绘制每一行
-    for (int y = 0; y < lcd_config.height; y++) {
-        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, lcd_config.width, y + 1, buffer);
-    }
-
-    heap_caps_free(buffer);
+    
+    qlcd_set_color(color);
     lua_pushboolean(L, 1);
     return 1;
 }
@@ -393,44 +222,11 @@ static int l_qlcd_clear(lua_State *L) {
 qlcd.cleanup()
 */
 static int l_qlcd_cleanup(lua_State *L) {
-    // 移除LVGL显示设备
-    if (disp != NULL) {
-        lv_disp_remove(disp);
-        disp = NULL;
+    esp_err_t ret = qlcd_cleanup();
+    if (ret != ESP_OK) {
+        LLOGE("Cleanup failed: %s", esp_err_to_name(ret));
     }
-
-    // 释放缓冲区
-    if (disp_buf1) {
-        heap_caps_free(disp_buf1);
-        disp_buf1 = NULL;
-    }
-    
-    if (disp_buf2) {
-        heap_caps_free(disp_buf2);
-        disp_buf2 = NULL;
-    }
-
-    // 删除LCD面板
-    if (panel_handle) {
-        esp_lcd_panel_del(panel_handle);
-        panel_handle = NULL;
-    }
-
-    // 删除面板IO
-    if (io_handle) {
-        esp_lcd_panel_io_del(io_handle);
-        io_handle = NULL;
-    }
-
-    // 释放SPI总线
-    if (lcd_config.spi_host >= 0) {
-        spi_bus_free(lcd_config.spi_host);
-    }
-
-    is_initialized = false;
-    
-    LLOGI("QLCD resources cleaned up");
-    lua_pushboolean(L, 1);
+    lua_pushboolean(L, ret == ESP_OK);
     return 1;
 }
 
@@ -438,13 +234,16 @@ static int l_qlcd_cleanup(lua_State *L) {
 static const rotable_Reg_t reg_qlcd[] = {
     { "init",           ROREG_FUNC(l_qlcd_init) },
     { "lvgl_register",  ROREG_FUNC(l_qlcd_lvgl_register) },
-    //{ "initlvgl",       ROREG_FUNC(l_qlcd_initlvgl) },
+    { "sleep",          ROREG_FUNC(l_qlcd_sleep) },
+    { "wakeup",         ROREG_FUNC(l_qlcd_wakeup) },
     { "clear",          ROREG_FUNC(l_qlcd_clear) },
     { "cleanup",        ROREG_FUNC(l_qlcd_cleanup) },
-    // 常量定义
-    { "SPI_HOST_1",     ROREG_INT(SPI1_HOST) },
-    { "SPI_HOST_2",     ROREG_INT(SPI2_HOST) },
-    { "SPI_HOST_3",     ROREG_INT(SPI3_HOST) },
+    // 颜色常量
+    { "BLACK",          ROREG_INT(0x0000) },
+    { "WHITE",          ROREG_INT(0xFFFF) },
+    { "RED",            ROREG_INT(0xF800) },
+    { "GREEN",          ROREG_INT(0x07E0) },
+    { "BLUE",           ROREG_INT(0x001F) },
     { NULL,             ROREG_INT(0) }
 };
 

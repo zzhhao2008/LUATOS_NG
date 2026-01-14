@@ -2,5 +2,5 @@
 nvs,      data,      nvs,       0x9000,     0x7000,
 app0,     app,       ota_0,     0x10000,    0x7A0000,
 script,   0x5A,      0x5A,      0x7B0000,   0x600000,
-spiffs,   data,      spiffs,    0xDB0000,   0x100000,
+spiffs,   data,      spiffs,    0xDB0000,   128K,
 fdb,      0x5A,      0x5B,      0xFF0000,   0x10000,
