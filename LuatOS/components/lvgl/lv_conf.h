@@ -273,7 +273,7 @@ typedef void * lv_fs_drv_user_data_t;
  * However the opened images might consume additional RAM.
  * Set it to 0 to disable caching */
 #ifndef LV_IMG_CACHE_DEF_SIZE
-#define LV_IMG_CACHE_DEF_SIZE       1
+#define LV_IMG_CACHE_DEF_SIZE       5
 #endif
 
 /*Declare the type of the user data of image decoder (can be e.g. `void *`, `int`, `struct`)*/
