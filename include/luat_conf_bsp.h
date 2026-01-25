@@ -2,7 +2,7 @@
 #ifndef LUAT_CONF_BSP
 #define LUAT_CONF_BSP
 
-#define LUAT_BSP_VERSION "V1008_4"
+#define LUAT_BSP_VERSION "V1008_5"
 
 
 //------------------------------------------------------
