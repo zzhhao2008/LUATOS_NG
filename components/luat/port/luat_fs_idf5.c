@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 #include "esp_log.h"
 #include "esp_err.h"
-#include "esp_spiffs.h"
+#include "esp_littlefs.h"
 #include "esp_system.h"
 #include "esp_partition.h"
 #include "esp_flash.h"
@@ -27,7 +27,7 @@
 static void lvgl_fs_codec_init(void);
 #endif
 
-extern const struct luat_vfs_filesystem vfs_fs_spiffs;
+extern const struct luat_vfs_filesystem vfs_fs_littlefs;
 extern const struct luat_vfs_filesystem vfs_fs_luadb;
 extern const struct luat_vfs_filesystem vfs_fs_romfs;
 extern const struct luat_vfs_filesystem vfs_fs_lfs2;
@@ -39,10 +39,10 @@ extern const unsigned char bin2c_romfs_bin[3072];
 extern size_t luat_luadb_act_size;
 
 // 文件系统初始化函数
-static const esp_vfs_spiffs_conf_t spiffs_conf = {
-    .base_path = "/spiffs",
+static const esp_vfs_littlefs_conf_t littlefs_conf = {
+    .base_path = "/littlefs",
     .partition_label = NULL,
-    .max_files = 10,
+    .dont_mount = false,
     .format_if_mount_failed = true
 };
 
@@ -76,25 +76,25 @@ const luat_romfs_ctx idf5_romfs2 = {
 
 
 int luat_fs_init(void) {
-	esp_err_t ret = esp_vfs_spiffs_register(&spiffs_conf);
+	esp_err_t ret = esp_vfs_littlefs_register(&littlefs_conf);
 	if (ret) {
-		LLOGW("spiffs register ret %d %s", ret, esp_err_to_name(ret));
+		LLOGW("littlefs register ret %d %s", ret, esp_err_to_name(ret));
 	}
 	// vfs进行必要的初始化
 	luat_vfs_init(NULL);
-	// 注册vfs for spiffs 实现
-	luat_vfs_reg(&vfs_fs_spiffs);
+	// 注册vfs for littlefs 实现
+	luat_vfs_reg(&vfs_fs_littlefs);
 	luat_fs_conf_t conf = {
 		.busname = "",
-		.type = "spiffs",
-		.filesystem = "spiffs",
+		.type = "littlefs",
+		.filesystem = "littlefs",
 		.mount_point = "",
 	};
 	luat_fs_mount(&conf);
 	// 先注册luadb
 	luat_fs_conf_t conf2 = {0};
     // luat_timer_mdelay(3000);
-    // LLOGD("spiffs_conf %p", &spiffs_conf);
+    // LLOGD("littlefs_conf %p", &littlefs_conf);
 	luadb_partition = esp_partition_find_first(0x5A, 0x5A, "script");
 	if (luadb_partition != NULL) {
         char tmp[8] = {0};
@@ -142,132 +142,132 @@ int luat_fs_init(void) {
     return 0;
 }
 
-FILE* luat_vfs_spiffs_fopen(void* userdata, const char *filename, const char *mode) {
+FILE* luat_vfs_littlefs_fopen(void* userdata, const char *filename, const char *mode) {
     char path[256] = {0};
 	if (filename == NULL || strlen(filename) > 240) return NULL;
 	if (filename[0] == '/')
-		sprintf(path, "/spiffs%s", filename);
+		sprintf(path, "/littlefs%s", filename);
 	else
-		sprintf(path, "/spiffs/%s", filename);
+		sprintf(path, "/littlefs/%s", filename);
     FILE* fd = fopen(path, mode);
     //LLOGD("fopen %s %s %s %p", filename, path, mode, fd);
     return fd;
 }
 
-int luat_vfs_spiffs_getc(void* userdata, FILE* stream) {
+int luat_vfs_littlefs_getc(void* userdata, FILE* stream) {
     int ret = getc(stream);
     return ret;
 }
 
-int luat_vfs_spiffs_fseek(void* userdata, FILE* stream, long int offset, int origin) {
+int luat_vfs_littlefs_fseek(void* userdata, FILE* stream, long int offset, int origin) {
     return fseek(stream, offset, origin);
 }
 
-int luat_vfs_spiffs_ftell(void* userdata, FILE* stream) {
+int luat_vfs_littlefs_ftell(void* userdata, FILE* stream) {
     return ftell(stream);
 }
 
-int luat_vfs_spiffs_fclose(void* userdata, FILE* stream) {
+int luat_vfs_littlefs_fclose(void* userdata, FILE* stream) {
     return fclose(stream);
 }
-int luat_vfs_spiffs_feof(void* userdata, FILE* stream) {
+int luat_vfs_littlefs_feof(void* userdata, FILE* stream) {
     return feof(stream);
 }
-int luat_vfs_spiffs_ferror(void* userdata, FILE *stream) {
+int luat_vfs_littlefs_ferror(void* userdata, FILE *stream) {
     return ferror(stream);
 }
-size_t luat_vfs_spiffs_fread(void* userdata, void *ptr, size_t size, size_t nmemb, FILE *stream) {
+size_t luat_vfs_littlefs_fread(void* userdata, void *ptr, size_t size, size_t nmemb, FILE *stream) {
     int ret = fread(ptr, size, nmemb, stream);
     //LLOGD("fread %d %d %d", size, nmemb, ret);
 	if (ret > 0)
 		return size * ret;
 	return 0;
 }
-size_t luat_vfs_spiffs_fwrite(void* userdata, const void *ptr, size_t size, size_t nmemb, FILE *stream) {
+size_t luat_vfs_littlefs_fwrite(void* userdata, const void *ptr, size_t size, size_t nmemb, FILE *stream) {
     int ret = fwrite(ptr, size, nmemb, stream);
     //LLOGD("fwrite %d %d %d", size, nmemb, ret);
 	if (ret > 0)
 		return size * ret;
 	return 0;
 }
-int luat_vfs_spiffs_remove(void* userdata, const char *filename) {
+int luat_vfs_littlefs_remove(void* userdata, const char *filename) {
     char path[256] = {0};
 	if (filename == NULL || strlen(filename) > 240) return 0;
 	if (filename[0] == '/')
-		sprintf(path, "/spiffs%s", filename);
+		sprintf(path, "/littlefs%s", filename);
 	else
-		sprintf(path, "/spiffs/%s", filename);
+		sprintf(path, "/littlefs/%s", filename);
     return remove(path);
 }
-int luat_vfs_spiffs_rename(void* userdata, const char *old_filename, const char *new_filename) {
+int luat_vfs_littlefs_rename(void* userdata, const char *old_filename, const char *new_filename) {
     char path[256] = {0};
     char path2[256] = {0};
 	if (old_filename == NULL || strlen(old_filename) > 240) return -1;
 	if (new_filename == NULL || strlen(new_filename) > 240) return -1;
 	if (old_filename[0] == '/')
-		sprintf(path, "/spiffs%s", old_filename);
+		sprintf(path, "/littlefs%s", old_filename);
 	else
-		sprintf(path, "/spiffs/%s", old_filename);
+		sprintf(path, "/littlefs/%s", old_filename);
 	if (new_filename[0] == '/')
-		sprintf(path2, "/spiffs%s", new_filename);
+		sprintf(path2, "/littlefs%s", new_filename);
 	else
-		sprintf(path2, "/spiffs/%s", new_filename);
+		sprintf(path2, "/littlefs/%s", new_filename);
     return rename(path, path2);
 }
-int luat_vfs_spiffs_fexist(void* userdata, const char *filename) {
-    FILE* fd = luat_vfs_spiffs_fopen(userdata, filename, "rb");
+int luat_vfs_littlefs_fexist(void* userdata, const char *filename) {
+    FILE* fd = luat_vfs_littlefs_fopen(userdata, filename, "rb");
     if (fd) {
-        luat_vfs_spiffs_fclose(userdata, fd);
+        luat_vfs_littlefs_fclose(userdata, fd);
         return 1;
     }
     return 0;
 }
 
-size_t luat_vfs_spiffs_fsize(void* userdata, const char *filename) {
+size_t luat_vfs_littlefs_fsize(void* userdata, const char *filename) {
     FILE *fd;
     size_t size = 0;
-    fd = luat_vfs_spiffs_fopen(userdata, filename, "rb");
+    fd = luat_vfs_littlefs_fopen(userdata, filename, "rb");
     if (fd) {
-        luat_vfs_spiffs_fseek(userdata, fd, 0, SEEK_END);
-        size = luat_vfs_spiffs_ftell(userdata, fd); 
-        luat_vfs_spiffs_fclose(userdata, fd);
+        luat_vfs_littlefs_fseek(userdata, fd, 0, SEEK_END);
+        size = luat_vfs_littlefs_ftell(userdata, fd);
+        luat_vfs_littlefs_fclose(userdata, fd);
     }
     return size;
 }
 
-int luat_vfs_spiffs_mkfs(void* userdata, luat_fs_conf_t *conf) {
+int luat_vfs_littlefs_mkfs(void* userdata, luat_fs_conf_t *conf) {
     return -1;
 }
-int luat_vfs_spiffs_mount(void** userdata, luat_fs_conf_t *conf) {
+int luat_vfs_littlefs_mount(void** userdata, luat_fs_conf_t *conf) {
     return 0;
 }
-int luat_vfs_spiffs_umount(void* userdata, luat_fs_conf_t *conf) {
+int luat_vfs_littlefs_umount(void* userdata, luat_fs_conf_t *conf) {
     return 0;
 }
 
-int luat_vfs_spiffs_mkdir(void* userdata, char const* dir) {
+int luat_vfs_littlefs_mkdir(void* userdata, char const* dir) {
     char path[256] = {0};
 	if (dir == NULL || strlen(dir) > 240) return -1;
 	if (dir[0] == '/')
-		sprintf(path, "/spiffs%s", dir);
+		sprintf(path, "/littlefs%s", dir);
 	else
-		sprintf(path, "/spiffs/%s", dir);
+		sprintf(path, "/littlefs/%s", dir);
     return mkdir(path, 0);
 }
-int luat_vfs_spiffs_rmdir(void* userdata, char const* dir) {
+int luat_vfs_littlefs_rmdir(void* userdata, char const* dir) {
     char path[256] = {0};
 	if (dir == NULL || strlen(dir) > 240) return -1;
 	if (dir[0] == '/')
-		sprintf(path, "/spiffs%s", dir);
+		sprintf(path, "/littlefs%s", dir);
 	else
-		sprintf(path, "/spiffs/%s", dir);
+		sprintf(path, "/littlefs/%s", dir);
 	return remove(path);
 }
-int luat_vfs_spiffs_info(void* userdata, const char* path, luat_fs_info_t *conf) {
-    memcpy(conf->filesystem, "spiffs", strlen("spiffs")+1);
+int luat_vfs_littlefs_info(void* userdata, const char* path, luat_fs_info_t *conf) {
+    memcpy(conf->filesystem, "littlefs", strlen("littlefs")+1);
     size_t total_bytes = 0;
     size_t used_bytes = 0;
-    if (esp_spiffs_info(NULL, &total_bytes, &used_bytes) == 0) {
+    if (esp_littlefs_info(NULL, &total_bytes, &used_bytes) == 0) {
         conf->type = 0;
         conf->total_block = total_bytes / 512;
         conf->block_used = used_bytes / 512;
@@ -282,7 +282,7 @@ int luat_vfs_spiffs_info(void* userdata, const char* path, luat_fs_info_t *conf)
     return 0;
 }
 
-int luat_vfs_spiffs_lsdir(void* fsdata, char const* dir, luat_fs_dirent_t* ents, size_t offset, size_t len) {
+int luat_vfs_littlefs_lsdir(void* fsdata, char const* dir, luat_fs_dirent_t* ents, size_t offset, size_t len) {
     DIR *dp;
     struct dirent *ep;
     int index = 0;
@@ -291,9 +291,9 @@ int luat_vfs_spiffs_lsdir(void* fsdata, char const* dir, luat_fs_dirent_t* ents,
     char path[256] = {0};
 	if (dir == NULL || strlen(dir) > 240) return 0;
 	if (dir[0] == '/')
-		sprintf(path, "/spiffs%s", dir);
+		sprintf(path, "/littlefs%s", dir);
 	else
-		sprintf(path, "/spiffs/%s", dir);
+		sprintf(path, "/littlefs/%s", dir);
 
     dp = opendir (path);
     if (dp != NULL)
@@ -324,9 +324,9 @@ int luat_vfs_spiffs_lsdir(void* fsdata, char const* dir, luat_fs_dirent_t* ents,
     return 0;
 }
 
-#define T(name) .name = luat_vfs_spiffs_##name
-const struct luat_vfs_filesystem vfs_fs_spiffs = {
-    .name = "spiffs",
+#define T(name) .name = luat_vfs_littlefs_##name
+const struct luat_vfs_filesystem vfs_fs_littlefs = {
+    .name = "littlefs",
     .opts = {
         .mkfs = NULL,
         T(mount),

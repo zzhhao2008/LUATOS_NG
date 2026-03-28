@@ -88,7 +88,7 @@ if __name__ == '__main__':
         core_addr = parts['app0']['Offset']
         script_addr = parts['script']['Offset']
         script_size_hex = parts['script']['Size']
-        fs_addr = parts['spiffs']['Offset']
+        fs_addr = parts['littlefs']['Offset']
     except Exception as e:
         print(f"解析分区表失败: {e}")
         raise

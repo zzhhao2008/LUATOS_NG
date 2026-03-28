@@ -164,7 +164,7 @@ idf_component_register(SRC_DIRS ${LUATOS_ROOT}/luat/modules
                                 ${LUATOS_ROOT}/components/repl
                                 ${LUATOS_ROOT}/components/ymodem
                                 ${LUATOS_ROOT}/components/xxtea/include
-                    REQUIRES esp-tls lwip esp_http_client mbedtls spiffs driver heap esp_netif esp_event
+                    REQUIRES esp-tls lwip esp_http_client mbedtls littlefs driver heap esp_netif esp_event
                              esp_lcd esp_wifi esp_rom http_parser mqtt esp_adc bt console spi_flash esp_psram nvs_flash
                     )
 

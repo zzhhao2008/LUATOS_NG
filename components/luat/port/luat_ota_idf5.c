@@ -7,7 +7,7 @@
 #include <sys/stat.h>
 #include "esp_log.h"
 #include "esp_err.h"
-#include "esp_spiffs.h"
+#include "esp_littlefs.h"
 #include "esp_system.h"
 #include "esp_partition.h"
 
