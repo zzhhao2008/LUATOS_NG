@@ -29,6 +29,7 @@ typedef struct {
     int cs_pin;
     int freq;
     int draw_buf_height;
+    bool invert_color;  // 是否反转颜色
 } qlcd_config_t;
 
 // QLCD状态结构

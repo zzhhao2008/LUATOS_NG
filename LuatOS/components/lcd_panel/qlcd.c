@@ -160,6 +160,7 @@ esp_err_t qlcd_init(const qlcd_config_t *config)
     qlcd_state.config.cs_pin = config->cs_pin > 0 ? config->cs_pin : 6;
     qlcd_state.config.freq = config->freq > 0 ? config->freq : 40000000; // 40MHz
     qlcd_state.config.draw_buf_height = config->draw_buf_height > 0 ? config->draw_buf_height : 20;
+    qlcd_state.config.invert_color = config->invert_color; // 保存颜色反转配置
 
     // 验证引脚配置
     if (qlcd_state.config.mosi_pin < 0 || qlcd_state.config.clk_pin < 0 ||
@@ -273,11 +274,22 @@ esp_err_t qlcd_init(const qlcd_config_t *config)
         }
     }
 
-    // 颜色反转（根据屏幕实际需求调整）
-    ret = esp_lcd_panel_invert_color(qlcd_state.panel_handle, true);
-    if (ret != ESP_OK)
+    // 颜色反转（根据配置决定）
+    if (qlcd_state.config.invert_color)
     {
-        ESP_LOGW(TAG, "Color invert failed: %s", esp_err_to_name(ret));
+        ret = esp_lcd_panel_invert_color(qlcd_state.panel_handle, true);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Color invert failed: %s", esp_err_to_name(ret));
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Color inversion enabled");
+        }
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Color inversion disabled");
     }
 
     // 根据屏幕方向调整设置
@@ -474,7 +486,10 @@ esp_err_t qlcd_wakeup(void)
 
     // 修复：移除重复的panel_init调用（仅初始化一次即可）
     // 恢复显示设置（仅恢复必要的，无需重新初始化）
-    esp_lcd_panel_invert_color(qlcd_state.panel_handle, true);
+    if (qlcd_state.config.invert_color)
+    {
+        esp_lcd_panel_invert_color(qlcd_state.panel_handle, true);
+    }
     esp_lcd_panel_swap_xy(qlcd_state.panel_handle, true);
     esp_lcd_panel_mirror(qlcd_state.panel_handle, false, true);
 
