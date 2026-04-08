@@ -52,7 +52,8 @@ static int l_qlcd_init(lua_State *L) {
         .rst_pin = 7,
         .cs_pin = 6,
         .freq = 40000000, // 40MHz
-        .draw_buf_height = 20
+        .draw_buf_height = 20,
+        .invert_color = true
     };
     
     if (lua_type(L, 1) == LUA_TTABLE) {
@@ -95,6 +96,10 @@ static int l_qlcd_init(lua_State *L) {
         
         lua_getfield(L, 1, "draw_buf_height");
         if (lua_isinteger(L, -1)) config.draw_buf_height = luaL_checkinteger(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "invert_color");
+        config.invert_color = lua_toboolean(L, -1);
         lua_pop(L, 1);
     }
     
