@@ -80,9 +80,9 @@
 #define I2C1_SDA_IO_NUM	(21)
 #define I2C1_SCL_IO_NUM	(46)
 /* SPI */
-#define SPI2_MISO_IO_NUM	(16)
-#define SPI2_MOSI_IO_NUM	(17)
-#define SPI2_SCLK_IO_NUM	(18)
+#define SPI2_MISO_IO_NUM	(14)
+#define SPI2_MOSI_IO_NUM	(47)
+#define SPI2_SCLK_IO_NUM	(21)
 #define SPI3_MISO_IO_NUM	(33)
 #define SPI3_MOSI_IO_NUM	(47)
 #define SPI3_SCLK_IO_NUM	(48)
