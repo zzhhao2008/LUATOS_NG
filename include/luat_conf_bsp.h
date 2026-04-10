@@ -71,10 +71,10 @@
 // #define LUAT_USE_MLX90640 1
 // zlib压缩,更快更小的实现
 // #define LUAT_USE_YMODEM
-// #define LUAT_USE_MINIZ
+#define LUAT_USE_MINIZ
 
-// #define LUAT_USE_FATFS
-// #define LUAT_USE_FATFS_CHINESE 3
+#define LUAT_USE_FATFS
+#define LUAT_USE_FATFS_CHINESE 3
 
 //----------------------------
 // 高级功能, 推荐使用repl, shell已废弃
