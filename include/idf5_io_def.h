@@ -83,9 +83,9 @@
 #define SPI2_MISO_IO_NUM	(14)
 #define SPI2_MOSI_IO_NUM	(47)
 #define SPI2_SCLK_IO_NUM	(21)
-#define SPI3_MISO_IO_NUM	(33)
+#define SPI3_MISO_IO_NUM	(14)
 #define SPI3_MOSI_IO_NUM	(47)
-#define SPI3_SCLK_IO_NUM	(48)
+#define SPI3_SCLK_IO_NUM	(21)
 
 #elif CONFIG_IDF_TARGET_ESP32H2
 
