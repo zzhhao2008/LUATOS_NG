@@ -165,6 +165,6 @@ idf_component_register(SRC_DIRS ${LUATOS_ROOT}/luat/modules
                                 ${LUATOS_ROOT}/components/xxtea/include
                                 ${CMAKE_SOURCE_DIR}/managed_components/joltwallet__littlefs/src/littlefs
                     REQUIRES esp-tls lwip esp_http_client mbedtls littlefs driver heap esp_netif esp_event
-                             esp_lcd esp_wifi esp_rom http_parser mqtt esp_adc bt console spi_flash esp_psram nvs_flash
+                             esp_lcd esp_wifi esp_rom http_parser mqtt esp_adc bt console spi_flash esp_psram nvs_flash sdmmc
                     )
 
