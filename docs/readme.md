@@ -3,3 +3,4 @@
 * [LVGL组件列表](lvgl.md)
 * [QLCD FT6336U](ft6336_qlcd_lua.md)
 * [SDIO](sdio.md)
+* [LVGL_CANVAS](lvgl_canvas.md)
