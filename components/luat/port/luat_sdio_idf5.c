@@ -11,7 +11,6 @@
 #include "sdmmc_cmd.h"
 #include "driver/sdmmc_host.h"
 #include "esp_log.h"
-#include "esp_vfs_fat.h"
 
 #define LUAT_LOG_TAG "luat_sdio"
 
@@ -20,9 +19,6 @@
 
 // Global SDMMC card instance for each SDIO port
 static sdmmc_card_t* sdio_cards[LUAT_SDIO_MAX_INSTANCES] = {NULL, NULL};
-
-// SDMMC host instance for each SDIO port
-static sdmmc_host_t sdio_hosts[LUAT_SDIO_MAX_INSTANCES];
 
 // Initialization status for each SDIO port
 static uint8_t sdio_initialized[LUAT_SDIO_MAX_INSTANCES] = {0, 0};
@@ -234,10 +230,13 @@ int luat_sdio_init_with_gpio(int id, const luat_sdio_gpio_config_t* config) {
 
     esp_err_t ret;
 
+    // Configure SDMMC host
+    sdmmc_host_t host_config = SDMMC_HOST_DEFAULT();
+
     // Initialize SDMMC host
-    sdio_hosts[id] = sdmmc_host_init();
-    if (sdio_hosts[id].flags == SDMMC_HOST_FLAG_SPI) {
-        LLOGE("Failed to initialize SDMMC host for SDIO %d", id);
+    ret = sdmmc_host_init();
+    if (ret != ESP_OK) {
+        LLOGE("Failed to initialize SDMMC host for SDIO %d: %s (0x%x)", id, esp_err_to_name(ret), ret);
         return -2;
     }
 
@@ -269,38 +268,29 @@ int luat_sdio_init_with_gpio(int id, const luat_sdio_gpio_config_t* config) {
         LLOGI("Using default GPIO configuration for SDIO %d", id);
     }
 
-    // Initialize the card
-    ret = sdmmc_card_init(&sdio_hosts[id], &slot_config);
-    if (ret != ESP_OK) {
-        LLOGE("Failed to initialize SD card: %s (0x%x)", esp_err_to_name(ret), ret);
-        sdmmc_host_deinit(sdio_hosts[id]);
-        return -3;
-    }
-
     // Allocate card structure
     sdio_cards[id] = (sdmmc_card_t*)malloc(sizeof(sdmmc_card_t));
     if (sdio_cards[id] == NULL) {
         LLOGE("Failed to allocate memory for SD card structure");
-        sdmmc_host_deinit(sdio_hosts[id]);
-        return -4;
+        sdmmc_host_deinit();
+        return -3;
     }
 
-    // Read card information
-    ret = sdmmc_card_read_info(sdio_hosts[id], slot_config, sdio_cards[id]);
+    // Initialize the card
+    ret = sdmmc_card_init(&host_config, sdio_cards[id]);
     if (ret != ESP_OK) {
-        LLOGE("Failed to read SD card info: %s (0x%x)", esp_err_to_name(ret), ret);
+        LLOGE("Failed to initialize SD card: %s (0x%x)", esp_err_to_name(ret), ret);
         free(sdio_cards[id]);
         sdio_cards[id] = NULL;
-        sdmmc_host_deinit(sdio_hosts[id]);
-        return -5;
+        sdmmc_host_deinit();
+        return -4;
     }
 
     // Mark as initialized
     sdio_initialized[id] = 1;
 
     LLOGI("SDIO %d initialized successfully", id);
-    LLOGI("  Card type: %s", (sdio_cards[id]->ocr & SD_OCR_SDHC_CAP) ? "SDHC/SDXC" : "SDSC");
-    LLOGI("  Capacity: %llu MB", sdio_cards[id]->csd.capacity / (1024 * 1024));
+    LLOGI("  Capacity: %llu MB", (uint64_t)(sdio_cards[id]->csd.capacity / (1024 * 1024)));
     LLOGI("  Sector size: %d", sdio_cards[id]->csd.sector_size);
 
     return 0;

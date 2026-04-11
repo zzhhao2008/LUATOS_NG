@@ -2,6 +2,11 @@
 #define LUAT_SDIO_H
 #include "luat_base.h"
 
+// Include ESP-IDF SDMMC header for sdmmc_card_t type
+#ifdef __LUATOS__
+#include "sdmmc_cmd.h"
+#endif
+
 typedef struct luat_sdio
 {
     /* data */
@@ -47,9 +52,15 @@ int luat_sdio_sd_unmount(int id, int rca);
 int luat_sdio_sd_format(int id, int rca);
 
 // ESP-IDF 5.1 specific functions
+#ifdef __LUATOS__
 sdmmc_card_t* luat_sdio_get_card(int id);
 size_t luat_sdio_get_sector_size(int id);
 uint64_t luat_sdio_get_sector_count(int id);
+#else
+void* luat_sdio_get_card(int id);
+size_t luat_sdio_get_sector_size(int id);
+uint64_t luat_sdio_get_sector_count(int id);
+#endif
 
 // GPIO configuration functions
 int luat_sdio_set_gpio_config(int id, const luat_sdio_gpio_config_t* config);
