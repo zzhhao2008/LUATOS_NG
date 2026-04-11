@@ -1395,7 +1395,15 @@ static int l_zbuff_equal(lua_State *L)
 	return 2;
 }
 
+// 新增函数
+static int l_zbuff_ptr(lua_State *L) {
+    luat_zbuff_t *buff = tozbuff(L);
+    lua_pushlightuserdata(L, buff->addr);  // 返回底层指针
+    return 1;
+}
+
 static const luaL_Reg lib_zbuff[] = {
+    {"ptr", l_zbuff_ptr}, 
     {"write", l_zbuff_write},
     {"read", l_zbuff_read},
     {"clear", l_zbuff_clear},
