@@ -268,12 +268,21 @@ int luat_sdio_init_with_gpio(int id, const luat_sdio_gpio_config_t* config) {
         LLOGI("Using default GPIO configuration for SDIO %d", id);
     }
 
+    // Initialize the SDMMC slot with the configured GPIO pins
+    // This is CRITICAL - without this step, the GPIO configuration won't be applied
+    ret = sdmmc_host_init_slot(SDMMC_HOST_SLOT_1, &slot_config);
+    if (ret != ESP_OK) {
+        LLOGE("Failed to initialize SDMMC slot for SDIO %d: %s (0x%x)", id, esp_err_to_name(ret), ret);
+        sdmmc_host_deinit();
+        return -3;
+    }
+
     // Allocate card structure
     sdio_cards[id] = (sdmmc_card_t*)malloc(sizeof(sdmmc_card_t));
     if (sdio_cards[id] == NULL) {
         LLOGE("Failed to allocate memory for SD card structure");
         sdmmc_host_deinit();
-        return -3;
+        return -4;
     }
 
     // Initialize the card
@@ -283,7 +292,7 @@ int luat_sdio_init_with_gpio(int id, const luat_sdio_gpio_config_t* config) {
         free(sdio_cards[id]);
         sdio_cards[id] = NULL;
         sdmmc_host_deinit();
-        return -4;
+        return -5;
     }
 
     // Mark as initialized
