@@ -98,10 +98,269 @@ static int l_sdio_write(lua_State *L) {
     return 1;
 }
 
+/*
+设置SDIO的GPIO引脚配置
+@api sdio.set_gpio_config(id, config)
+@int SDIO总线id,与具体设备有关,通常从0开始
+@table GPIO配置表,包含以下字段:
+        - clk_gpio: 时钟引脚 (必需)
+        - cmd_gpio: 命令引脚 (必需)
+        - d0_gpio: 数据0引脚 (必需)
+        - d1_gpio: 数据1引脚 (4位模式,可选)
+        - d2_gpio: 数据2引脚 (4位模式,可选)
+        - d3_gpio: 数据3引脚 (4位模式,可选)
+        - cd_gpio: 卡检测引脚 (可选,默认-1不使用)
+        - wp_gpio: 写保护引脚 (可选,默认-1不使用)
+@return boolean 成功返回true,否则返回false
+@return string 失败原因
+@usage
+-- 设置自定义GPIO配置 (必须在初始化前调用)
+local gpio_config = {
+    clk_gpio = 36,
+    cmd_gpio = 35,
+    d0_gpio = 37,
+    d1_gpio = 38,
+    d2_gpio = 33,
+    d3_gpio = 34,
+    cd_gpio = -1,
+    wp_gpio = -1
+}
+local ok, err = sdio.set_gpio_config(0, gpio_config)
+if ok then
+    -- 初始化SDIO
+    sdio.init(0)
+else
+    log.error("sdio", "set_gpio_config failed:", err)
+end
+*/
+static int l_sdio_set_gpio_config(lua_State *L) {
+    int id = luaL_checkinteger(L, 1);
+
+    // 检查第一个参数是否为表
+    if (!lua_istable(L, 2)) {
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "config must be a table");
+        return 2;
+    }
+
+    luat_sdio_gpio_config_t config;
+
+    // 初始化配置为默认值
+    config.clk_gpio = -1;
+    config.cmd_gpio = -1;
+    config.d0_gpio = -1;
+    config.d1_gpio = -1;
+    config.d2_gpio = -1;
+    config.d3_gpio = -1;
+    config.cd_gpio = -1;
+    config.wp_gpio = -1;
+
+    // 读取GPIO配置表中的值
+    lua_getfield(L, 2, "clk_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.clk_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "cmd_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.cmd_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "d0_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.d0_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "d1_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.d1_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "d2_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.d2_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "d3_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.d3_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "cd_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.cd_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "wp_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.wp_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    // 验证必需的引脚
+    if (config.clk_gpio < 0 || config.cmd_gpio < 0 || config.d0_gpio < 0) {
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "clk_gpio, cmd_gpio, and d0_gpio are required");
+        return 2;
+    }
+
+    // 调用底层设置函数
+    int ret = luat_sdio_set_gpio_config(id, &config);
+
+    if (ret == 0) {
+        lua_pushboolean(L, 1);
+        return 1;
+    } else {
+        lua_pushboolean(L, 0);
+        const char* err_msg = NULL;
+        switch (ret) {
+            case -1: err_msg = "Invalid SDIO ID"; break;
+            case -2: err_msg = "Cannot set GPIO config after initialization"; break;
+            case -3: err_msg = "Failed to allocate memory for GPIO configuration"; break;
+            default: err_msg = "Unknown error"; break;
+        }
+        lua_pushstring(L, err_msg);
+        return 2;
+    }
+}
+
+/*
+使用自定义GPIO配置初始化SDIO (一步设置并初始化)
+@api sdio.init_with_gpio(id, config)
+@int SDIO总线id,与具体设备有关,通常从0开始
+@table GPIO配置表,格式同set_gpio_config
+@return boolean 成功返回true,否则返回false
+@return string 失败原因
+@usage
+-- 使用自定义GPIO配置初始化SDIO
+local gpio_config = {
+    clk_gpio = 36,
+    cmd_gpio = 35,
+    d0_gpio = 37,
+    d1_gpio = 38,
+    d2_gpio = 33,
+    d3_gpio = 34
+}
+local ok, err = sdio.init_with_gpio(0, gpio_config)
+if ok then
+    log.info("sdio", "initialized successfully")
+else
+    log.error("sdio", "init failed:", err)
+end
+*/
+static int l_sdio_init_with_gpio(lua_State *L) {
+    int id = luaL_checkinteger(L, 1);
+
+    // 检查第二个参数是否为表
+    if (!lua_istable(L, 2)) {
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "config must be a table");
+        return 2;
+    }
+
+    luat_sdio_gpio_config_t config;
+
+    // 初始化配置为默认值
+    config.clk_gpio = -1;
+    config.cmd_gpio = -1;
+    config.d0_gpio = -1;
+    config.d1_gpio = -1;
+    config.d2_gpio = -1;
+    config.d3_gpio = -1;
+    config.cd_gpio = -1;
+    config.wp_gpio = -1;
+
+    // 读取GPIO配置表中的值
+    lua_getfield(L, 2, "clk_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.clk_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "cmd_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.cmd_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "d0_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.d0_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "d1_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.d1_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "d2_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.d2_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "d3_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.d3_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "cd_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.cd_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 2, "wp_gpio");
+    if (lua_isinteger(L, -1)) {
+        config.wp_gpio = lua_tointeger(L, -1);
+    }
+    lua_pop(L, 1);
+
+    // 验证必需的引脚
+    if (config.clk_gpio < 0 || config.cmd_gpio < 0 || config.d0_gpio < 0) {
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "clk_gpio, cmd_gpio, and d0_gpio are required");
+        return 2;
+    }
+
+    // 调用底层初始化函数
+    int ret = luat_sdio_init_with_gpio(id, &config);
+
+    if (ret == 0) {
+        lua_pushboolean(L, 1);
+        return 1;
+    } else {
+        lua_pushboolean(L, 0);
+        const char* err_msg = NULL;
+        switch (ret) {
+            case -1: err_msg = "Invalid SDIO ID"; break;
+            case -2: err_msg = "Failed to initialize SDMMC host"; break;
+            case -3: err_msg = "Failed to initialize SD card"; break;
+            case -4: err_msg = "Failed to allocate memory for SD card structure"; break;
+            case -5: err_msg = "Failed to read SD card info"; break;
+            default: err_msg = "Unknown error"; break;
+        }
+        lua_pushstring(L, err_msg);
+        return 2;
+    }
+}
+
 #include "rotable2.h"
 static const rotable_Reg_t reg_sdio[] =
 {
     { "init" ,          ROREG_FUNC(l_sdio_init )},
+    { "set_gpio_config",  ROREG_FUNC(l_sdio_set_gpio_config)},
+    { "init_with_gpio",  ROREG_FUNC(l_sdio_init_with_gpio)},
     { "sd_read" ,       ROREG_FUNC(l_sdio_read )},
     { "sd_write" ,      ROREG_FUNC(l_sdio_write)},
     // { "sd_mount" ,      ROREG_FUNC(l_sdio_sd_mount)},

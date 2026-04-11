@@ -10,7 +10,6 @@
 
 #include "sdmmc_cmd.h"
 #include "driver/sdmmc_host.h"
-#include "driver/sdmmc_card.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
 
@@ -28,73 +27,16 @@ static sdmmc_host_t sdio_hosts[LUAT_SDIO_MAX_INSTANCES];
 // Initialization status for each SDIO port
 static uint8_t sdio_initialized[LUAT_SDIO_MAX_INSTANCES] = {0, 0};
 
+// GPIO configuration for each SDIO port (NULL = use default)
+static luat_sdio_gpio_config_t* gpio_configs[LUAT_SDIO_MAX_INSTANCES] = {NULL, NULL};
+
 /**
  * Initialize SDIO host and detect SD card
  * @param id SDIO port ID (0 or 1)
  * @return 0 on success, negative on error
  */
 int luat_sdio_init(int id) {
-    if (id < 0 || id >= LUAT_SDIO_MAX_INSTANCES) {
-        LLOGE("Invalid SDIO ID: %d", id);
-        return -1;
-    }
-
-    // Check if already initialized
-    if (sdio_initialized[id] && sdio_cards[id] != NULL) {
-        LLOGI("SDIO %d already initialized", id);
-        return 0;
-    }
-
-    esp_err_t ret;
-
-    // Initialize SDMMC host
-    sdio_hosts[id] = sdmmc_host_init();
-    if (sdio_hosts[id].flags == SDMMC_HOST_FLAG_SPI) {
-        LLOGE("Failed to initialize SDMMC host for SDIO %d", id);
-        return -2;
-    }
-
-    // Configure SDMMC slot
-    sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-
-    // Set 4-bit data bus for better performance
-    slot_config.width = 4;
-
-    // Initialize the card
-    ret = sdmmc_card_init(&sdio_hosts[id], &slot_config);
-    if (ret != ESP_OK) {
-        LLOGE("Failed to initialize SD card: %s (0x%x)", esp_err_to_name(ret), ret);
-        sdmmc_host_deinit(sdio_hosts[id]);
-        return -3;
-    }
-
-    // Allocate card structure
-    sdio_cards[id] = (sdmmc_card_t*)malloc(sizeof(sdmmc_card_t));
-    if (sdio_cards[id] == NULL) {
-        LLOGE("Failed to allocate memory for SD card structure");
-        sdmmc_host_deinit(sdio_hosts[id]);
-        return -4;
-    }
-
-    // Read card information
-    ret = sdmmc_card_read_info(sdio_hosts[id], slot_config, sdio_cards[id]);
-    if (ret != ESP_OK) {
-        LLOGE("Failed to read SD card info: %s (0x%x)", esp_err_to_name(ret), ret);
-        free(sdio_cards[id]);
-        sdio_cards[id] = NULL;
-        sdmmc_host_deinit(sdio_hosts[id]);
-        return -5;
-    }
-
-    // Mark as initialized
-    sdio_initialized[id] = 1;
-
-    LLOGI("SDIO %d initialized successfully", id);
-    LLOGI("  Card type: %s", (sdio_cards[id]->ocr & SD_OCR_SDHC_CAP) ? "SDHC/SDXC" : "SDSC");
-    LLOGI("  Capacity: %llu MB", sdio_cards[id]->csd.capacity / (1024 * 1024));
-    LLOGI("  Sector size: %d", sdio_cards[id]->csd.sector_size);
-
-    return 0;
+    return luat_sdio_init_with_gpio(id, gpio_configs[id]);
 }
 
 /**
@@ -223,4 +165,143 @@ uint64_t luat_sdio_get_sector_count(int id) {
     }
 
     return sdio_cards[id]->csd.capacity;
+}
+
+/**
+ * Set GPIO configuration for SDIO port
+ * @param id SDIO port ID (0 or 1)
+ * @param config Pointer to GPIO configuration structure (NULL to clear and use default)
+ * @return 0 on success, negative on error
+ */
+int luat_sdio_set_gpio_config(int id, const luat_sdio_gpio_config_t* config) {
+    if (id < 0 || id >= LUAT_SDIO_MAX_INSTANCES) {
+        LLOGE("Invalid SDIO ID: %d", id);
+        return -1;
+    }
+
+    if (sdio_initialized[id]) {
+        LLOGE("Cannot set GPIO config after initialization for SDIO %d", id);
+        return -2;
+    }
+
+    if (config != NULL) {
+        // Free previous configuration if exists
+        if (gpio_configs[id] != NULL) {
+            free(gpio_configs[id]);
+        }
+
+        // Allocate and copy new configuration
+        gpio_configs[id] = (luat_sdio_gpio_config_t*)malloc(sizeof(luat_sdio_gpio_config_t));
+        if (gpio_configs[id] == NULL) {
+            LLOGE("Failed to allocate memory for GPIO configuration");
+            return -3;
+        }
+        memcpy(gpio_configs[id], config, sizeof(luat_sdio_gpio_config_t));
+
+        LLOGI("SDIO %d GPIO config set: CLK=%d, CMD=%d, D0=%d, D1=%d, D2=%d, D3=%d, CD=%d, WP=%d",
+                id, config->clk_gpio, config->cmd_gpio, config->d0_gpio,
+                config->d1_gpio, config->d2_gpio, config->d3_gpio,
+                config->cd_gpio, config->wp_gpio);
+    } else {
+        // Clear configuration (use default)
+        if (gpio_configs[id] != NULL) {
+            free(gpio_configs[id]);
+            gpio_configs[id] = NULL;
+        }
+        LLOGI("SDIO %d GPIO config cleared (will use default pins)", id);
+    }
+
+    return 0;
+}
+
+/**
+ * Initialize SDIO with custom GPIO configuration
+ * @param id SDIO port ID (0 or 1)
+ * @param config Pointer to GPIO configuration structure (NULL to use default)
+ * @return 0 on success, negative on error
+ */
+int luat_sdio_init_with_gpio(int id, const luat_sdio_gpio_config_t* config) {
+    if (id < 0 || id >= LUAT_SDIO_MAX_INSTANCES) {
+        LLOGE("Invalid SDIO ID: %d", id);
+        return -1;
+    }
+
+    // Check if already initialized
+    if (sdio_initialized[id] && sdio_cards[id] != NULL) {
+        LLOGI("SDIO %d already initialized", id);
+        return 0;
+    }
+
+    esp_err_t ret;
+
+    // Initialize SDMMC host
+    sdio_hosts[id] = sdmmc_host_init();
+    if (sdio_hosts[id].flags == SDMMC_HOST_FLAG_SPI) {
+        LLOGE("Failed to initialize SDMMC host for SDIO %d", id);
+        return -2;
+    }
+
+    // Configure SDMMC slot
+    sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
+
+    // Set 4-bit data bus for better performance
+    slot_config.width = 4;
+
+    // Apply custom GPIO configuration if provided
+    if (config != NULL) {
+        slot_config.clk = config->clk_gpio;
+        slot_config.cmd = config->cmd_gpio;
+        slot_config.d0 = config->d0_gpio;
+        slot_config.d1 = config->d1_gpio;
+        slot_config.d2 = config->d2_gpio;
+        slot_config.d3 = config->d3_gpio;
+
+        // Optional pins (set to -1 if not used)
+        if (config->cd_gpio >= 0) {
+            slot_config.cd = config->cd_gpio;
+        }
+        if (config->wp_gpio >= 0) {
+            slot_config.wp = config->wp_gpio;
+        }
+
+        LLOGI("Using custom GPIO configuration for SDIO %d", id);
+    } else {
+        LLOGI("Using default GPIO configuration for SDIO %d", id);
+    }
+
+    // Initialize the card
+    ret = sdmmc_card_init(&sdio_hosts[id], &slot_config);
+    if (ret != ESP_OK) {
+        LLOGE("Failed to initialize SD card: %s (0x%x)", esp_err_to_name(ret), ret);
+        sdmmc_host_deinit(sdio_hosts[id]);
+        return -3;
+    }
+
+    // Allocate card structure
+    sdio_cards[id] = (sdmmc_card_t*)malloc(sizeof(sdmmc_card_t));
+    if (sdio_cards[id] == NULL) {
+        LLOGE("Failed to allocate memory for SD card structure");
+        sdmmc_host_deinit(sdio_hosts[id]);
+        return -4;
+    }
+
+    // Read card information
+    ret = sdmmc_card_read_info(sdio_hosts[id], slot_config, sdio_cards[id]);
+    if (ret != ESP_OK) {
+        LLOGE("Failed to read SD card info: %s (0x%x)", esp_err_to_name(ret), ret);
+        free(sdio_cards[id]);
+        sdio_cards[id] = NULL;
+        sdmmc_host_deinit(sdio_hosts[id]);
+        return -5;
+    }
+
+    // Mark as initialized
+    sdio_initialized[id] = 1;
+
+    LLOGI("SDIO %d initialized successfully", id);
+    LLOGI("  Card type: %s", (sdio_cards[id]->ocr & SD_OCR_SDHC_CAP) ? "SDHC/SDXC" : "SDSC");
+    LLOGI("  Capacity: %llu MB", sdio_cards[id]->csd.capacity / (1024 * 1024));
+    LLOGI("  Sector size: %d", sdio_cards[id]->csd.sector_size);
+
+    return 0;
 }
