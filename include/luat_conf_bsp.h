@@ -43,6 +43,7 @@
 
 #define LUAT_USE_FT6636 1
 #define LUAT_USE_QLCD 1
+#define LUAT_USE_ES8311 1
 //#define LUAT_USE_TOUCHKEY 1
 
 

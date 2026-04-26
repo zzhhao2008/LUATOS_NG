@@ -33,6 +33,7 @@ idf_component_register(SRC_DIRS ${LUATOS_ROOT}/luat/modules
                                 ${LUATOS_ROOT}/components/lcd
                                 ${LUATOS_ROOT}/components/lcd_panel
                                 ${LUATOS_ROOT}/components/ft6336
+                                ${LUATOS_ROOT}/components/es8311
                                 ${LUATOS_ROOT}/components/lvgl/gen/lv_core
                                 ${LUATOS_ROOT}/components/lvgl/gen/lv_draw
                                 ${LUATOS_ROOT}/components/lvgl/gen/lv_font
@@ -99,6 +100,7 @@ idf_component_register(SRC_DIRS ${LUATOS_ROOT}/luat/modules
                                 ${LUATOS_ROOT}/components/xxtea/binding
                                 INCLUDE_DIRS ../../include
                                 ${LUATOS_ROOT}/components/max30102
+                                ${LUATOS_ROOT}/components/es8311
                                 ${LUATOS_ROOT}/lua/include
                                 ${LUATOS_ROOT}/luat/include
                                 ${LUATOS_ROOT}/components/printf

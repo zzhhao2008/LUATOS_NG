@@ -101,7 +101,10 @@ static const luaL_Reg loadedlibs[] = {
   {"ft6336u", luaopen_ft6336u},             // ft6636电容触摸屏驱动
 #endif
 #ifdef LUAT_USE_QLCD
-  {"qlcd", luaopen_qlcd},             // ft6636电容触摸屏驱动
+  {"qlcd", luaopen_qlcd},             // QLCD驱动
+#endif
+#ifdef LUAT_USE_ES8311
+  {"es8311", luaopen_es8311},               // ES8311
 #endif
 //-----------------------------------------------------------------------
 // 工具库, 按需选用
