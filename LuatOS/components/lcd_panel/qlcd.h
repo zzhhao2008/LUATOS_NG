@@ -29,6 +29,9 @@ typedef struct {
     int cs_pin;
     int freq;
     int draw_buf_height;
+    bool swap_xy;
+    bool mirror_x;
+    bool mirror_y;
     bool invert_color;  // 是否反转颜色
 } qlcd_config_t;
 

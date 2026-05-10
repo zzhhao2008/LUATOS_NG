@@ -101,6 +101,19 @@ static int l_qlcd_init(lua_State *L) {
         lua_getfield(L, 1, "invert_color");
         config.invert_color = lua_toboolean(L, -1);
         lua_pop(L, 1);
+
+        lua_getfield(L, 1, "swap_xy");
+        config.swap_xy = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "mirror_x");
+        config.mirror_x = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "mirror_y");
+        config.mirror_y = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+
     }
     
     // 检查引脚是否有效

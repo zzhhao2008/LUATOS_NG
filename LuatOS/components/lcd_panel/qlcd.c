@@ -161,6 +161,10 @@ esp_err_t qlcd_init(const qlcd_config_t *config)
     qlcd_state.config.freq = config->freq > 0 ? config->freq : 40000000; // 40MHz
     qlcd_state.config.draw_buf_height = config->draw_buf_height > 0 ? config->draw_buf_height : 20;
     qlcd_state.config.invert_color = config->invert_color; // 保存颜色反转配置
+    qlcd_state.config.swap_xy = config->swap_xy;
+    qlcd_state.config.mirror_x = config->mirror_x;
+    qlcd_state.config.mirror_y = config->mirror_y;
+
 
     // 验证引脚配置
     if (qlcd_state.config.mosi_pin < 0 || qlcd_state.config.clk_pin < 0 ||
@@ -293,13 +297,13 @@ esp_err_t qlcd_init(const qlcd_config_t *config)
     }
 
     // 根据屏幕方向调整设置
-    ret = esp_lcd_panel_swap_xy(qlcd_state.panel_handle, true); // 显示翻转
+    ret = esp_lcd_panel_swap_xy(qlcd_state.panel_handle, qlcd_state.config.swap_xy); // 显示翻转
     if (ret != ESP_OK)
     {
         ESP_LOGW(TAG, "Swap XY failed: %s", esp_err_to_name(ret));
     }
 
-    ret = esp_lcd_panel_mirror(qlcd_state.panel_handle, false, true); // 镜像
+    ret = esp_lcd_panel_mirror(qlcd_state.panel_handle, qlcd_state.config.mirror_x, qlcd_state.config.mirror_y); // 镜像
     if (ret != ESP_OK)
     {
         ESP_LOGW(TAG, "Mirror failed: %s", esp_err_to_name(ret));
