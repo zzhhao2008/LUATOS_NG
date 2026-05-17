@@ -621,6 +621,8 @@ int luat_lv_canvas_draw_rect(lua_State *L);
 int luat_lv_canvas_draw_text(lua_State *L);
 int luat_lv_canvas_draw_img(lua_State *L);
 int luat_lv_canvas_draw_arc(lua_State *L);
+int luat_lv_canvas_draw_polygon(lua_State *L);
+int luat_lv_canvas_draw_line(lua_State *L);
 
 #define LUAT_LV_CANVAS_RLT     
 

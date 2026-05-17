@@ -785,6 +785,8 @@ LUAT_LV_CALENDAR_EX_RLT
 {"canvas_draw_text", ROREG_FUNC(luat_lv_canvas_draw_text)},
 {"canvas_draw_img", ROREG_FUNC(luat_lv_canvas_draw_img)},
 {"canvas_draw_arc", ROREG_FUNC(luat_lv_canvas_draw_arc)},
+{"canvas_draw_polygon", ROREG_FUNC(luat_lv_canvas_draw_polygon)},
+{"canvas_draw_line", ROREG_FUNC(luat_lv_canvas_draw_line)},
 
 LUAT_LV_CANVAS_EX_RLT
 #endif

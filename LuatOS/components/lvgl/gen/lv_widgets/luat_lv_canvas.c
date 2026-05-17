@@ -1,4 +1,3 @@
-
 #include "luat_base.h"
 #include "lvgl.h"
 #include "luat_lvgl.h"
@@ -173,3 +172,59 @@ int luat_lv_canvas_draw_arc(lua_State *L) {
     return 0;
 }
 
+// void lv_canvas_draw_line(lv_obj_t* canvas, lv_point_t* points, uint16_t point_cnt, lv_draw_line_dsc_t* line_draw_dsc)
+int luat_lv_canvas_draw_line(lua_State *L) { 
+    LV_DEBUG("CALL lv_canvas_draw_line");
+    lv_obj_t* canvas = (lv_obj_t*)lua_touserdata(L, 1);
+    
+    // 检查第二个参数是 table 还是 userdata
+    lv_point_t* points = NULL;
+    uint16_t point_cnt = 0;
+    lv_point_t temp_points[32]; // 临时缓冲区，支持最多32个点
+    
+    if (lua_istable(L, 2)) {
+        // 从 Lua table 中提取点坐标
+        point_cnt = (uint16_t)luaL_checkinteger(L, 3);
+        
+        if (point_cnt > 32) {
+            luaL_error(L, "Too many points (max 32)");
+            return 0;
+        }
+        
+        for (uint16_t i = 0; i < point_cnt; i++) {
+            lua_rawgeti(L, 2, i + 1); // 获取 table[i+1]
+            if (lua_istable(L, -1)) {
+                lua_rawgeti(L, -1, 1); // x 坐标
+                temp_points[i].x = (lv_coord_t)luaL_checknumber(L, -1);
+                lua_pop(L, 1);
+                
+                lua_rawgeti(L, -1, 2); // y 坐标
+                temp_points[i].y = (lv_coord_t)luaL_checknumber(L, -1);
+                lua_pop(L, 1);
+            } else {
+                luaL_error(L, "Point %d is not a table", i);
+                return 0;
+            }
+            lua_pop(L, 1); // 弹出点 table
+        }
+        points = temp_points;
+    } else {
+        // 原有逻辑：直接使用 userdata 指针
+        points = (lv_point_t*)lua_touserdata(L, 2);
+        point_cnt = (uint16_t)luaL_checkinteger(L, 3);
+    }
+    
+    lv_draw_line_dsc_t* draw_dsc = (lv_draw_line_dsc_t*)lua_touserdata(L, 4);
+    lv_canvas_draw_line(canvas, points, point_cnt, draw_dsc);
+    return 0;
+}
+
+int luat_lv_canvas_draw_polygon(lua_State *L){
+    LV_DEBUG("CALL lv_canvas_draw_polygon");
+    lv_obj_t* canvas = (lv_obj_t*)lua_touserdata(L, 1);
+    lv_point_t* points = (lv_point_t*)lua_touserdata(L, 2);
+    uint16_t point_cnt = (uint16_t)luaL_checkinteger(L, 3);
+    lv_draw_rect_dsc_t* rect_dsc = (lv_draw_rect_dsc_t*)lua_touserdata(L, 4);
+    lv_canvas_draw_polygon(canvas ,points ,point_cnt ,rect_dsc);
+    return 0;
+}
