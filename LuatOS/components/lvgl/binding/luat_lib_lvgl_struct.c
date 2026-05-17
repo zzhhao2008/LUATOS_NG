@@ -252,7 +252,12 @@ int _lvgl_struct_draw_rect_dsc_t_newindex(lua_State *L) {
         rect_dsc->value_str = luaL_optstring(L, 3, NULL);
     }
     else if (!strcmp("value_font", key)) {
-        rect_dsc->value_font = luaL_optstring(L, 3, NULL);
+        // value_font字段应该是lv_font_t*指针类型，接受userdata
+        if (lua_isuserdata(L, 3)) {
+            rect_dsc->value_font = (const lv_font_t*)lua_touserdata(L, 3);
+        } else {
+            rect_dsc->value_font = NULL;
+        }
     }
     else if (!strcmp("value_opa", key)) {
         rect_dsc->value_opa = luaL_optinteger(L, 3, 0);
@@ -356,7 +361,12 @@ int _lvgl_struct_draw_label_dsc_t_newindex(lua_State *L) {
         label_dsc->sel_bg_color.full = luaL_optinteger(L, 3, 0);
     }
     else if (!strcmp("font", key)) {
-        label_dsc->font = luaL_optstring(L, 3, NULL);
+        // font字段应该是lv_font_t*指针类型，接受userdata
+        if (lua_isuserdata(L, 3)) {
+            label_dsc->font = (const lv_font_t*)lua_touserdata(L, 3);
+        } else {
+            label_dsc->font = NULL;
+        }
     }
     else if (!strcmp("opa", key)) {
         label_dsc->opa = luaL_optinteger(L, 3, 0);
