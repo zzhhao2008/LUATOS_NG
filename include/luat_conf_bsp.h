@@ -2,7 +2,7 @@
 #ifndef LUAT_CONF_BSP
 #define LUAT_CONF_BSP
 
-#define LUAT_BSP_VERSION "V1008_9"
+#define LUAT_BSP_VERSION "V1008_10"
 
 
 //------------------------------------------------------
@@ -11,7 +11,7 @@
 //custom -->
 //------------------------------------------------------
 
-// #define LUAT_USE_TLS
+#define LUAT_USE_TLS
 #define LUAT_USE_SNTP
 // 禁用自动调用网络对时
 // #define LUAT_USE_SNTP_NOT_AUTO
